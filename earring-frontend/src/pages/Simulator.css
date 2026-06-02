@@ -1,0 +1,443 @@
+/* Simulator Page Styles */
+.simulator-page {
+  padding-top: 130px;
+  padding-bottom: 7rem;
+}
+
+.simulator-grid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 3.5rem;
+  align-items: start;
+}
+
+@media (max-width: 992px) {
+  .simulator-grid {
+    grid-template-columns: 1fr;
+    gap: 3rem;
+  }
+}
+
+/* Lado izquierdo: Viewport */
+.simulator-viewport-column {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.viewport-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.mode-selector-tabs {
+  display: flex;
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 0.25rem;
+  border-radius: 30px;
+}
+
+.mode-tab {
+  padding: 0.5rem 1.25rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  border-radius: 20px;
+  color: var(--text-muted);
+  transition: var(--transition-quick);
+}
+
+.mode-tab.active {
+  background-color: var(--text-dark);
+  color: #FFFFFF;
+}
+
+.model-selectors {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.model-btn {
+  padding: 0.4rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-secondary);
+  border-radius: 4px;
+}
+
+.model-btn.active {
+  border-color: var(--primary-gold);
+  color: var(--dark-gold);
+  background-color: rgba(197, 168, 128, 0.05);
+}
+
+.camera-error-banner {
+  background-color: #ffeef0;
+  color: #ff3b30;
+  padding: 1rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  border-left: 3px solid #ff3b30;
+}
+
+/* Viewport Canvas container */
+.simulator-viewport {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background-color: #000000;
+  overflow: hidden;
+  border-radius: 8px;
+  box-shadow: var(--shadow-lg), 0 10px 30px rgba(0, 0, 0, 0.05);
+  border: 1px solid var(--border-color);
+  touch-action: none; /* Previene scroll móvil al arrastrar */
+}
+
+.webcam-feed {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1); /* Espejar feed */
+}
+
+.model-background-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.viewport-instruction-overlay {
+  position: absolute;
+  top: 15px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(26, 26, 26, 0.75);
+  color: #FFFFFF;
+  font-size: 0.75rem;
+  padding: 0.5rem 1.25rem;
+  border-radius: 20px;
+  pointer-events: none;
+  z-index: 10;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* Draggable Earrings */
+.draggable-earring {
+  position: absolute;
+  cursor: grab;
+  z-index: 20;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.draggable-earring.dragging {
+  cursor: grabbing;
+}
+
+.draggable-earring img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 10px rgba(0,0,0,0.15));
+  pointer-events: none;
+  transition: transform 0.1s ease;
+}
+
+.draggable-earring:hover::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 1px dashed var(--primary-gold);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: rotateDashed 10s linear infinite;
+}
+
+@keyframes rotateDashed {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.earring-handle {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  width: 8px;
+  height: 8px;
+  background-color: var(--primary-gold);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.draggable-earring:hover .earring-handle {
+  opacity: 1;
+}
+
+.viewport-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.capture-btn {
+  flex-grow: 1;
+}
+
+/* Lado derecho: Controles */
+.simulator-controls-column {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.shadow-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 2rem;
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+}
+
+.selected-product-header {
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.control-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--primary-gold);
+  text-transform: uppercase;
+}
+
+.control-product-name {
+  font-size: 1.6rem;
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.2;
+}
+
+.control-product-collection {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.control-product-price {
+  font-size: 1.2rem;
+  font-weight: 500;
+  color: var(--text-dark);
+  margin-top: 0.75rem;
+}
+
+/* Sliders */
+.control-section-heading {
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  padding-bottom: 0.5rem;
+}
+
+.adjustment-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.slider-group label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-dark);
+  display: flex;
+  justify-content: space-between;
+}
+
+.slider-group label span {
+  color: var(--primary-gold);
+  font-weight: 600;
+}
+
+.simulator-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background-color: var(--border-color);
+  outline: none;
+}
+
+.simulator-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background-color: var(--text-dark);
+  border: 2px solid var(--primary-gold);
+  cursor: pointer;
+  transition: var(--transition-quick);
+}
+
+.simulator-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+  background-color: var(--primary-gold);
+}
+
+/* Checkbox Toggle */
+.toggle-group {
+  margin-top: 1rem;
+}
+
+.checkbox-container {
+  display: flex;
+  align-items: center;
+  position: relative;
+  padding-left: 2rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  user-select: none;
+}
+
+.checkbox-container input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  height: 0;
+  width: 0;
+}
+
+.checkmark {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  height: 18px;
+  width: 18px;
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  transition: var(--transition-quick);
+}
+
+.checkbox-container:hover input ~ .checkmark {
+  border-color: var(--primary-gold);
+}
+
+.checkbox-container input:checked ~ .checkmark {
+  background-color: var(--text-dark);
+  border-color: var(--text-dark);
+}
+
+.checkmark:after {
+  content: "";
+  position: absolute;
+  display: none;
+}
+
+.checkbox-container input:checked ~ .checkmark:after {
+  display: block;
+}
+
+.checkbox-container .checkmark:after {
+  left: 6px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid #FFFFFF;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* Quick Catalog grid */
+.quick-catalog-card {
+  max-height: 290px;
+  overflow-y: auto;
+}
+
+.quick-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.quick-product-item {
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-primary);
+  padding: 0.5rem;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  transition: var(--transition-quick);
+  text-align: center;
+}
+
+.quick-product-item:hover {
+  border-color: var(--primary-gold);
+  transform: translateY(-2px);
+}
+
+.quick-product-item.active {
+  border-color: var(--primary-gold);
+  background-color: rgba(197, 168, 128, 0.08);
+  box-shadow: inset 0 0 0 1px var(--primary-gold);
+}
+
+.quick-product-img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 5px rgba(0,0,0,0.04));
+}
+
+.quick-product-name {
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: var(--text-dark);
+  line-height: 1.2;
+  height: 2.4em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.back-to-store {
+  text-align: center;
+}
+
+.back-link {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.back-link:hover {
+  color: var(--primary-gold);
+}
