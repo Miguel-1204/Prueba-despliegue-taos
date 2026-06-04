@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { products } from '../data/products';
+import { products, collections } from '../data/products';
 import cameraIcon from '../assets/TAOS_img/svg/camera-svgrepo-com.svg';
 import './Catalog.css';
 
@@ -92,18 +92,15 @@ export default function Catalog() {
             >
               Todos
             </button>
-            <button 
-              className={`filter-btn ${selectedCollection === 'flores-de-mi-tierra' ? 'active' : ''}`}
-              onClick={() => handleCollectionChange('flores-de-mi-tierra')}
-            >
-              Flores de mi Tierra
-            </button>
-            <button 
-              className={`filter-btn ${selectedCollection === 'mariposas' ? 'active' : ''}`}
-              onClick={() => handleCollectionChange('mariposas')}
-            >
-              Mariposas
-            </button>
+            {collections.map((col) => (
+              <button
+                key={col.slug}
+                className={`filter-btn ${selectedCollection === col.slug ? 'active' : ''}`}
+                onClick={() => handleCollectionChange(col.slug)}
+              >
+                {col.name}
+              </button>
+            ))}
           </div>
 
           <div className="search-sort-controls">
