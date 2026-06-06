@@ -1,4 +1,4 @@
-/* Simulator Page Styles */
+/* Simulator Page Styles - AR Filter */
 .simulator-page {
   padding-top: 130px;
   padding-bottom: 7rem;
@@ -18,7 +18,7 @@
   }
 }
 
-/* Lado izquierdo: Viewport */
+/* Lado izquierdo: Viewport AR */
 .simulator-viewport-column {
   display: flex;
   flex-direction: column;
@@ -33,46 +33,31 @@
   gap: 1rem;
 }
 
-.mode-selector-tabs {
-  display: flex;
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  padding: 0.25rem;
-  border-radius: 30px;
+.ar-title {
+  font-size: 1.5rem;
+  color: var(--primary-gold);
+  margin: 0;
 }
 
-.mode-tab {
-  padding: 0.5rem 1.25rem;
-  font-size: 0.8rem;
-  font-weight: 500;
-  border-radius: 20px;
-  color: var(--text-muted);
-  transition: var(--transition-quick);
-}
-
-.mode-tab.active {
-  background-color: var(--text-dark);
-  color: #FFFFFF;
-}
-
-.model-selectors {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.model-btn {
+.status-badge {
   padding: 0.4rem 1rem;
   font-size: 0.75rem;
-  font-weight: 500;
-  border: 1px solid var(--border-color);
-  background-color: var(--bg-secondary);
-  border-radius: 4px;
+  font-weight: 600;
+  border-radius: 20px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
-.model-btn.active {
-  border-color: var(--primary-gold);
-  color: var(--dark-gold);
-  background-color: rgba(197, 168, 128, 0.05);
+.status-waiting {
+  background-color: rgba(255, 159, 10, 0.1);
+  color: #ff9f0a;
+  border: 1px solid rgba(255, 159, 10, 0.3);
+}
+
+.status-ok {
+  background-color: rgba(52, 199, 89, 0.1);
+  color: #34c759;
+  border: 1px solid rgba(52, 199, 89, 0.3);
 }
 
 .camera-error-banner {
@@ -90,108 +75,103 @@
   position: relative;
   width: 100%;
   aspect-ratio: 4 / 3;
-  background-color: #000000;
+  background-color: #1a1a1a;
   overflow: hidden;
   border-radius: 8px;
   box-shadow: var(--shadow-lg), 0 10px 30px rgba(0, 0, 0, 0.05);
   border: 1px solid var(--border-color);
-  touch-action: none; /* Previene scroll móvil al arrastrar */
 }
 
 .webcam-feed {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transform: scaleX(-1); /* Espejar feed */
+  transform: scaleX(-1); /* Espejar feed para sentirlo como espejo */
 }
 
-.model-background-img {
+.ar-overlay-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover;
-  user-select: none;
-  -webkit-user-drag: none;
+  object-fit: cover; /* <-- CRUCIAL para que el canvas coincida con el recorte del video */
+  pointer-events: none; /* Dejar pasar los clicks si hubiera */
+  transform: scaleX(-1); /* Espejar para que coincida con el video espejado */
 }
 
 .viewport-instruction-overlay {
   position: absolute;
-  top: 15px;
+  bottom: 30px;
   left: 50%;
   transform: translateX(-50%);
-  background-color: rgba(26, 26, 26, 0.75);
+  background-color: rgba(26, 26, 26, 0.85);
   color: #FFFFFF;
-  font-size: 0.75rem;
-  padding: 0.5rem 1.25rem;
-  border-radius: 20px;
+  font-size: 0.85rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: 30px;
   pointer-events: none;
   z-index: 10;
   letter-spacing: 0.05em;
   text-transform: uppercase;
+  border: 1px solid rgba(197, 168, 128, 0.5);
+  animation: pulseInstruction 2s infinite;
 }
 
-/* Draggable Earrings */
-.draggable-earring {
+@keyframes pulseInstruction {
+  0% { transform: translateX(-50%) scale(1); opacity: 0.9; }
+  50% { transform: translateX(-50%) scale(1.05); opacity: 1; border-color: var(--primary-gold); }
+  100% { transform: translateX(-50%) scale(1); opacity: 0.9; }
+}
+
+.ar-loading-overlay {
   position: absolute;
-  cursor: grab;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(5px);
   z-index: 20;
-  user-select: none;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  color: white;
+  gap: 1rem;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
 }
 
-.draggable-earring.dragging {
-  cursor: grabbing;
-}
-
-.draggable-earring img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  filter: drop-shadow(0 4px 10px rgba(0,0,0,0.15));
-  pointer-events: none;
-  transition: transform 0.1s ease;
-}
-
-.draggable-earring:hover::before {
-  content: '';
-  position: absolute;
-  inset: -6px;
-  border: 1px dashed var(--primary-gold);
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(197, 168, 128, 0.3);
+  border-top-color: var(--primary-gold);
   border-radius: 50%;
-  pointer-events: none;
-  animation: rotateDashed 10s linear infinite;
+  animation: spin 1s linear infinite;
 }
 
-@keyframes rotateDashed {
-  from { transform: rotate(0deg); }
+@keyframes spin {
   to { transform: rotate(360deg); }
-}
-
-.earring-handle {
-  position: absolute;
-  bottom: -4px;
-  right: -4px;
-  width: 8px;
-  height: 8px;
-  background-color: var(--primary-gold);
-  border-radius: 50%;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.draggable-earring:hover .earring-handle {
-  opacity: 1;
 }
 
 .viewport-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 1.5rem;
 }
 
 .capture-btn {
   flex-grow: 1;
+}
+
+.capture-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: #cccccc;
+  border-color: #cccccc;
+  color: #666666;
 }
 
 /* Lado derecho: Controles */

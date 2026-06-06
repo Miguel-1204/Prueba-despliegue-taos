@@ -1,20 +1,22 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
+import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
 import { products } from '../data/products';
+import * as THREE from 'three';
 import './Simulator.css';
 
-const models = [
-  { id: 'model-1', name: 'Modelo Sofía', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=600&auto=format&fit=crop' },
-  { id: 'model-2', name: 'Modelo Elena', url: 'https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?q=80&w=600&auto=format&fit=crop' },
-  { id: 'model-3', name: 'Modelo Isabella', url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=600&auto=format&fit=crop' }
-];
+const earringModelUrl = new URL('../assets/TAOS_img/3D/ornate jewelry pendant 3d model_Clone1.glb', import.meta.url).href;
 
 export default function Simulator() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [mode, setMode] = useState('model'); // 'camera' or 'model'
-  const [selectedModel, setSelectedModel] = useState(models[0]);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  
+  // AR State
+  const [isModelLoading, setIsModelLoading] = useState(false);
+  const [modelLoaded, setModelLoaded] = useState(false);
+  const [threeReady, setThreeReady] = useState(false);
+  const [faceDetected, setFaceDetected] = useState(false);
 
   // Derivar arete seleccionado directamente de la URL
   const productParam = searchParams.get('product');
@@ -27,37 +29,182 @@ export default function Simulator() {
   };
   
   // Controles de ajuste del arete
-  const [earringSize, setEarringSize] = useState(70); // en píxeles
-  const [earringRotation, setEarringRotation] = useState(0); // en grados
-  const [earringOpacity, setEarringOpacity] = useState(90); // en porcentaje
-  const [showMirrorEarring, setShowMirrorEarring] = useState(false); // mostrar un segundo arete para la otra oreja
-
-  // Posiciones de los aretes (en porcentaje o px dentro del contenedor)
-  const [leftPosition, setLeftPosition] = useState({ x: 120, y: 220 });
-  const [rightPosition, setRightPosition] = useState({ x: 260, y: 220 });
+  const [earringSizeOffset, setEarringSizeOffset] = useState(0); // Ajuste fino manual
+  const [earringOpacity, setEarringOpacity] = useState(100); // en porcentaje
+  const [showMirrorEarring, setShowMirrorEarring] = useState(true); // por defecto el par completo
+  const [earringOffsetX, setEarringOffsetX] = useState(0); // ajuste horizontal en píxeles
+  const [earringOffsetY, setEarringOffsetY] = useState(0); // ajuste vertical en píxeles
+  const [earringOffsetZ, setEarringOffsetZ] = useState(0); // ajuste de profundidad
 
   // Refs
   const videoRef = useRef(null);
-  const viewportRef = useRef(null);
+  const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const faceLandmarkerRef = useRef(null);
+  const requestRef = useRef(null);
+  const threeRendererRef = useRef(null);
+  const threeSceneRef = useRef(null);
+  const threeCameraRef = useRef(null);
+  const leftEarringRef = useRef(null);
+  const rightEarringRef = useRef(null);
+  const threeScaleBaseRef = useRef(1);
+  const prevLeftAnchorRef = useRef(null);
+  const prevRightAnchorRef = useRef(null);
+  
+  // Para suavizado (Exponential Moving Average)
+  const smoothedLeftRef = useRef(null);
+  const smoothedRightRef = useRef(null);
+  const smoothedScaleRef = useRef(null);
 
-  // Estados de arrastre
-  const [dragState, setDragState] = useState({
-    isActive: false,
-    target: null, // 'left' or 'right'
-    startX: 0,
-    startY: 0,
-    initialX: 0,
-    initialY: 0
-  });
+  // Inicializar MediaPipe
+  const initMediaPipe = async () => {
+    if (faceLandmarkerRef.current) return;
+    
+    setIsModelLoading(true);
+    try {
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+      );
+
+      // Intentamos inicializar con GPU
+      try {
+        const landmarker = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            delegate: "GPU"
+          },
+          outputFaceBlendshapes: false,
+          runningMode: "VIDEO",
+          numFaces: 1
+        });
+        faceLandmarkerRef.current = landmarker;
+      } catch (gpuError) {
+        console.warn("GPU FaceLandmarker falló, intentando CPU...", gpuError);
+        const landmarkerCPU = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            delegate: "CPU"
+          },
+          outputFaceBlendshapes: false,
+          runningMode: "VIDEO",
+          numFaces: 1
+        });
+        faceLandmarkerRef.current = landmarkerCPU;
+      }
+      
+      setModelLoaded(true);
+    } catch (err) {
+      console.error("Error al cargar MediaPipe:", err);
+      setCameraError("No pudimos cargar el modelo de Inteligencia Artificial para el filtro.");
+    } finally {
+      setIsModelLoading(false);
+    }
+  };
+
+  const initThree = async () => {
+    if (!canvasRef.current) return;
+    if (threeRendererRef.current) return;
+
+    const canvas = canvasRef.current;
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
+    renderer.setClearColor(0x000000, 0);
+    threeRendererRef.current = renderer;
+
+    const scene = new THREE.Scene();
+    threeSceneRef.current = scene;
+
+    const camera = new THREE.OrthographicCamera(
+      canvas.clientWidth / -2,
+      canvas.clientWidth / 2,
+      canvas.clientHeight / 2,
+      canvas.clientHeight / -2,
+      0.1,
+      1000
+    );
+    camera.position.set(0, 0, 100);
+    camera.lookAt(0, 0, 0);
+    threeCameraRef.current = camera;
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    scene.add(ambientLight);
+
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+    directionalLight.position.set(0, 100, 100);
+    scene.add(directionalLight);
+
+    const pointLight = new THREE.PointLight(0xffffff, 0.5);
+    pointLight.position.set(0, -100, 100);
+    scene.add(pointLight);
+
+    try {
+      const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
+      const loader = new GLTFLoader();
+
+      loader.load(
+        earringModelUrl,
+        (gltf) => {
+          const original = gltf.scene;
+          const box = new THREE.Box3().setFromObject(original);
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z);
+
+          original.position.sub(center);
+          original.position.y -= size.y / 2;
+          original.rotation.set(-Math.PI / 2, 0, 0);
+
+          const leftGroup = new THREE.Group();
+          leftGroup.add(original);
+
+          const rightGroup = new THREE.Group();
+          const mirrored = original.clone(true);
+          mirrored.scale.x = -1;
+          rightGroup.add(mirrored);
+
+          const baseScale = 1 / maxDim;
+          threeScaleBaseRef.current = baseScale;
+          leftGroup.scale.setScalar(baseScale);
+          rightGroup.scale.set(baseScale, baseScale, baseScale);
+          scene.add(leftGroup);
+          scene.add(rightGroup);
+
+          leftEarringRef.current = leftGroup;
+          rightEarringRef.current = rightGroup;
+          setThreeReady(true);
+        },
+        undefined,
+        (error) => {
+          console.error('Error cargando el modelo 3D:', error);
+          setCameraError('No pudimos cargar el modelo 3D local.');
+        }
+      );
+    } catch (error) {
+      console.error('Error inicializando Three.js:', error);
+      setCameraError('Error interno al inicializar el visor 3D.');
+    }
+  };
+
+  const applyModelOpacity = (opacity) => {
+    [leftEarringRef.current, rightEarringRef.current].forEach((group) => {
+      if (!group) return;
+      group.traverse((child) => {
+        if (child.isMesh && child.material) {
+          child.material.transparent = opacity < 100;
+          child.material.opacity = opacity / 100;
+        }
+      });
+    });
+  };
 
   const startCamera = async () => {
     setCameraError('');
     try {
       const constraints = {
         video: { 
-          width: { ideal: 640 },
-          height: { ideal: 480 },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
           facingMode: 'user' 
         },
         audio: false
@@ -67,16 +214,25 @@ export default function Simulator() {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        // Reproducir para asegurar que el video fluye antes de detectar
+        videoRef.current.play();
       }
+      setCameraActive(true);
+      
+      // Iniciar el modelo
+      await initMediaPipe();
+      
     } catch (err) {
       console.error('Error al acceder a la cámara:', err);
-      setCameraError('No pudimos acceder a tu cámara. Asegúrate de otorgar permisos o intenta en otro navegador. Usando modo modelo por defecto.');
-      setMode('model');
+      setCameraError('No pudimos acceder a tu cámara. Asegúrate de otorgar permisos o intenta en otro navegador.');
       setCameraActive(false);
     }
   };
 
   const stopCamera = () => {
+    if (requestRef.current) {
+      cancelAnimationFrame(requestRef.current);
+    }
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -84,171 +240,254 @@ export default function Simulator() {
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    setCameraActive(false);
+    setFaceDetected(false);
+    // Reiniciar suavizado
+    smoothedLeftRef.current = null;
+    smoothedRightRef.current = null;
+    smoothedScaleRef.current = null;
   };
 
-  // Manejar el flujo de la cámara
+  // Efecto global para controlar encendido/apagado al montar
   useEffect(() => {
-    if (mode === 'camera' && cameraActive) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      startCamera();
-    } else {
+    startCamera();
+    return () => {
       stopCamera();
-    }
-    return () => stopCamera();
-  }, [mode, cameraActive]);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const handleModeChange = (newMode) => {
-    if (newMode === 'camera') {
-      setMode('camera');
-      setCameraActive(true);
-    } else {
-      setMode('model');
-      setCameraActive(false);
-    }
-  };
-
-  // Drag and Drop Logic
-  const handleStartDrag = (e, earringSide) => {
-    e.preventDefault();
-    const event = e.touches ? e.touches[0] : e;
-    const currentPosition = earringSide === 'left' ? leftPosition : rightPosition;
-
-    setDragState({
-      isActive: true,
-      target: earringSide,
-      startX: event.clientX,
-      startY: event.clientY,
-      initialX: currentPosition.x,
-      initialY: currentPosition.y
-    });
-  };
-
-  const handleDrag = (e) => {
-    if (!dragState.isActive) return;
-    
-    const event = e.touches ? e.touches[0] : e;
-    const deltaX = event.clientX - dragState.startX;
-    const deltaY = event.clientY - dragState.startY;
-    
-    // Obtener los límites del contenedor
-    if (!viewportRef.current) return;
-    const rect = viewportRef.current.getBoundingClientRect();
-
-    let newX = dragState.initialX + deltaX;
-    let newY = dragState.initialY + deltaY;
-
-    // Limitar al contenedor
-    newX = Math.max(0, Math.min(newX, rect.width - earringSize));
-    newY = Math.max(0, Math.min(newY, rect.height - earringSize));
-
-    if (dragState.target === 'left') {
-      setLeftPosition({ x: newX, y: newY });
-    } else {
-      setRightPosition({ x: newX, y: newY });
-    }
-  };
-
-  const handleEndDrag = () => {
-    setDragState(prev => ({ ...prev, isActive: false, target: null }));
-  };
-
-  // Restablecer la posición de los aretes
-  const handleResetPositions = useCallback(() => {
-    if (viewportRef.current) {
-      const rect = viewportRef.current.getBoundingClientRect();
-      const midY = rect.height / 2 - earringSize / 2;
-      setLeftPosition({ x: rect.width * 0.3 - earringSize / 2, y: midY });
-      setRightPosition({ x: rect.width * 0.7 - earringSize / 2, y: midY });
-    }
-  }, [earringSize]);
-
-  // Ajustar posiciones iniciales al cambiar de modo o modelo
   useEffect(() => {
-    // Retrasar ligeramente para permitir el render del viewport
-    const timer = setTimeout(() => {
-      handleResetPositions();
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [mode, selectedModel, selectedProduct, handleResetPositions]);
+    if (cameraActive && modelLoaded) {
+      initThree();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraActive, modelLoaded]);
+
+  useEffect(() => {
+    if (threeReady) {
+      applyModelOpacity(earringOpacity);
+    }
+  }, [earringOpacity, threeReady]);
+
+  // Lógica de cálculo y suavizado (EMA)
+  const applySmoothing = (prev, current, alpha = 0.4) => {
+    if (!prev) return current;
+    return {
+      x: prev.x + alpha * (current.x - prev.x),
+      y: prev.y + alpha * (current.y - prev.y)
+    };
+  };
+
+  const applySmoothing3D = (prev, current, alpha = 0.4) => {
+    if (!prev) return current;
+    return {
+      x: prev.x + alpha * (current.x - prev.x),
+      y: prev.y + alpha * (current.y - prev.y),
+      z: prev.z + alpha * (current.z - prev.z)
+    };
+  };
+
+  // Render Loop para AR
+  const renderLoop = useCallback(async () => {
+    if (!videoRef.current || !canvasRef.current || !faceLandmarkerRef.current) {
+      requestRef.current = requestAnimationFrame(renderLoop);
+      return;
+    }
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+
+    if (width > 0 && height > 0 && (canvas.width !== width || canvas.height !== height)) {
+      canvas.width = width;
+      canvas.height = height;
+      if (threeRendererRef.current) {
+        threeRendererRef.current.setSize(width, height, false);
+      }
+      if (threeCameraRef.current) {
+        const cam = threeCameraRef.current;
+        cam.left = -width / 2;
+        cam.right = width / 2;
+        cam.top = height / 2;
+        cam.bottom = -height / 2;
+        cam.updateProjectionMatrix();
+      }
+    }
+
+    if (video.readyState >= 2) {
+      const startTimeMs = performance.now();
+      const results = faceLandmarkerRef.current.detectForVideo(video, startTimeMs);
+
+      if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+        setFaceDetected(true);
+        const landmarks = results.faceLandmarks[0];
+
+        const faceTop = landmarks[10];
+        const faceBottom = landmarks[152];
+        const dx = faceBottom.x - faceTop.x;
+        const dy = faceBottom.y - faceTop.y;
+        const faceHeightRaw = Math.sqrt(dx * dx + dy * dy);
+
+        const currentScale = applySmoothing(
+          { x: smoothedScaleRef.current, y: 0 },
+          { x: faceHeightRaw, y: 0 },
+          0.2
+        ).x;
+        smoothedScaleRef.current = currentScale;
+
+        const baseSize = currentScale * Math.min(width, height) * 0.25;
+        const finalEarringSize = Math.max(20, baseSize + earringSizeOffset);
+
+        const leftEarTragus = landmarks[454];
+        const rawLeftLobe = {
+          x: leftEarTragus.x * width,
+          y: (leftEarTragus.y * height) + (currentScale * height * 0.06),
+          z: (leftEarTragus.z || 0) * width * 0.22
+        };
+
+        const rightEarTragus = landmarks[234];
+        const rawRightLobe = {
+          x: rightEarTragus.x * width,
+          y: (rightEarTragus.y * height) + (currentScale * height * 0.06),
+          z: (rightEarTragus.z || 0) * width * 0.22
+        };
+
+        const nose = landmarks[1];
+        const leftEarVisible = (leftEarTragus.x - nose.x) > 0.03 &&
+                               leftEarTragus.x >= 0 && leftEarTragus.x <= 1 &&
+                               leftEarTragus.y >= 0 && leftEarTragus.y <= 1;
+        const rightEarVisible = (nose.x - rightEarTragus.x) > 0.03 &&
+                                rightEarTragus.x >= 0 && rightEarTragus.x <= 1 &&
+                                rightEarTragus.y >= 0 && rightEarTragus.y <= 1;
+
+        const earLineAngle = Math.atan2(
+          (leftEarTragus.y - rightEarTragus.y) * height,
+          (leftEarTragus.x - rightEarTragus.x) * width
+        );
+        const faceYaw = (nose.x - 0.5) * 0.9;
+        const facePitch = (nose.y - 0.5) * 0.5;
+
+        const smoothLeft = applySmoothing3D(smoothedLeftRef.current, rawLeftLobe, 0.35);
+        const smoothRight = applySmoothing3D(smoothedRightRef.current, rawRightLobe, 0.35);
+        smoothedLeftRef.current = smoothLeft;
+        smoothedRightRef.current = smoothRight;
+
+        const prevLeft = prevLeftAnchorRef.current;
+        const prevRight = prevRightAnchorRef.current;
+        const leftVelocity = prevLeft ? {
+          x: smoothLeft.x - prevLeft.x,
+          y: smoothLeft.y - prevLeft.y,
+          z: smoothLeft.z - prevLeft.z
+        } : { x: 0, y: 0, z: 0 };
+        const rightVelocity = prevRight ? {
+          x: smoothRight.x - prevRight.x,
+          y: smoothRight.y - prevRight.y,
+          z: smoothRight.z - prevRight.z
+        } : { x: 0, y: 0, z: 0 };
+
+        const leftSwing = {
+          x: -leftVelocity.x * 0.08,
+          y: Math.max(0, -leftVelocity.y) * 0.05,
+          z: -leftVelocity.z * 0.05
+        };
+        const rightSwing = {
+          x: -rightVelocity.x * 0.08,
+          y: Math.max(0, -rightVelocity.y) * 0.05,
+          z: -rightVelocity.z * 0.05
+        };
+
+        if (leftEarringRef.current) {
+          leftEarringRef.current.position.set(
+            smoothLeft.x - width / 2 + earringOffsetX + leftSwing.x,
+            height / 2 - smoothLeft.y + earringOffsetY + leftSwing.y,
+            smoothLeft.z + earringOffsetZ + leftSwing.z
+          );
+          leftEarringRef.current.rotation.set(
+            facePitch,
+            faceYaw,
+            earLineAngle
+          );
+          leftEarringRef.current.visible = showMirrorEarring && leftEarVisible;
+          const scaleValue = threeScaleBaseRef.current * finalEarringSize;
+          leftEarringRef.current.scale.set(scaleValue, scaleValue, scaleValue);
+        }
+
+        if (rightEarringRef.current) {
+          rightEarringRef.current.position.set(
+            smoothRight.x - width / 2 + earringOffsetX + rightSwing.x,
+            height / 2 - smoothRight.y + earringOffsetY + rightSwing.y,
+            smoothRight.z + earringOffsetZ + rightSwing.z
+          );
+          rightEarringRef.current.rotation.set(
+            facePitch,
+            faceYaw,
+            earLineAngle
+          );
+          rightEarringRef.current.visible = rightEarVisible;
+          const scaleValue = threeScaleBaseRef.current * finalEarringSize;
+          rightEarringRef.current.scale.set(scaleValue, scaleValue, scaleValue);
+        }
+
+        prevLeftAnchorRef.current = { ...smoothLeft };
+        prevRightAnchorRef.current = { ...smoothRight };
+      } else {
+        setFaceDetected(false);
+        if (leftEarringRef.current) leftEarringRef.current.visible = false;
+        if (rightEarringRef.current) rightEarringRef.current.visible = false;
+      }
+    }
+
+    if (threeRendererRef.current && threeSceneRef.current && threeCameraRef.current) {
+      threeRendererRef.current.render(threeSceneRef.current, threeCameraRef.current);
+    }
+
+    requestRef.current = requestAnimationFrame(renderLoop);
+  }, [earringSizeOffset, earringOpacity, showMirrorEarring]);
+
+  useEffect(() => {
+    if (cameraActive && modelLoaded) {
+      requestRef.current = requestAnimationFrame(renderLoop);
+    }
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+    };
+  }, [cameraActive, modelLoaded, renderLoop]);
 
   // Tomar captura de pantalla (Descargar simulador)
   const handleCapture = () => {
-    if (!viewportRef.current) return;
+    if (!videoRef.current || !canvasRef.current) return;
 
-    // Crear un canvas temporal
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const viewport = viewportRef.current;
+    // Crear un canvas de captura final
+    const exportCanvas = document.createElement('canvas');
+    const ctx = exportCanvas.getContext('2d');
+    const video = videoRef.current;
     
-    canvas.width = viewport.clientWidth;
-    canvas.height = viewport.clientHeight;
+    exportCanvas.width = video.videoWidth;
+    exportCanvas.height = video.videoHeight;
 
-    // 1. Dibujar el fondo (video o imagen)
-    if (mode === 'model') {
-      const img = new Image();
-      img.crossOrigin = 'anonymous'; // Evitar problemas de origen
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        drawEarringsOnCanvas(ctx);
-        downloadCanvas(canvas);
-      };
-      img.src = selectedModel.url;
-    } else if (mode === 'camera' && videoRef.current) {
-      // Dibujar frame del video
-      ctx.translate(canvas.width, 0);
-      ctx.scale(-1, 1); // Espejar la imagen para que coincida con la cámara web
-      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-      ctx.setTransform(1, 0, 0, 1, 0, 0); // Restaurar transformaciones
-      
-      // Dibujar aretes
-      drawEarringsOnCanvas(ctx);
-      downloadCanvas(canvas);
-    }
-  };
+    // 1. Dibujar el video, pero ESPEJADO horizontalmente para que luzca igual a lo que ve el usuario (el CSS lo espeja)
+    ctx.translate(exportCanvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, exportCanvas.width, exportCanvas.height);
+    // Restaurar transformación para que el arete (que ya se calculó sobre el frame no-espejado) se dibuje correctamente
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    
+    // 2. Dibujar el canvas superpuesto de los aretes (pero este tmb debe ser espejado, ya que sus coordenadas X se calcularon normales)
+    ctx.translate(exportCanvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(canvasRef.current, 0, 0, exportCanvas.width, exportCanvas.height);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
 
-  const drawEarringsOnCanvas = (ctx) => {
-    const earringImg = new Image();
-    earringImg.onload = () => {
-      ctx.globalAlpha = earringOpacity / 100;
-      
-      // Dibujar arete izquierdo
-      ctx.save();
-      ctx.translate(leftPosition.x + earringSize / 2, leftPosition.y + earringSize / 2);
-      ctx.rotate((earringRotation * Math.PI) / 180);
-      ctx.drawImage(
-        earringImg, 
-        -earringSize / 2, 
-        -earringSize / 2, 
-        earringSize, 
-        earringSize
-      );
-      ctx.restore();
+    // 3. Marca de agua TAOS (opcional, en una esquina)
+    ctx.fillStyle = "rgba(197, 168, 128, 0.8)";
+    ctx.font = "bold 24px Arial";
+    ctx.fillText("TAOS", 20, 40);
 
-      // Dibujar arete derecho (espejo si está habilitado)
-      if (showMirrorEarring) {
-        ctx.save();
-        ctx.translate(rightPosition.x + earringSize / 2, rightPosition.y + earringSize / 2);
-        ctx.rotate((earringRotation * Math.PI) / 180);
-        // Espejamos el arete si está en la oreja derecha
-        ctx.scale(-1, 1);
-        ctx.drawImage(
-          earringImg, 
-          -earringSize / 2, 
-          -earringSize / 2, 
-          earringSize, 
-          earringSize
-        );
-        ctx.restore();
-      }
-      ctx.globalAlpha = 1.0;
-    };
-    earringImg.src = selectedProduct.image;
-  };
-
-  const downloadCanvas = (canvas) => {
     const link = document.createElement('a');
     link.download = `TAOS-probador-virtual-${selectedProduct.id}.png`;
-    link.href = canvas.toDataURL('image/png');
+    link.href = exportCanvas.toDataURL('image/png');
     link.click();
   };
 
@@ -256,130 +495,56 @@ export default function Simulator() {
     <div className="simulator-page animate-fade-in">
       <div className="container simulator-grid">
         
-        {/* LADO IZQUIERDO: VISUALIZADOR DE CÁMARA O MODELO */}
+        {/* LADO IZQUIERDO: VISUALIZADOR DE CÁMARA (AR) */}
         <section className="simulator-viewport-column">
           <div className="viewport-header">
-            <div className="mode-selector-tabs">
-              <button 
-                className={`mode-tab ${mode === 'model' ? 'active' : ''}`}
-                onClick={() => handleModeChange('model')}
-              >
-                ❀ Usar Modelo
-              </button>
-              <button 
-                className={`mode-tab ${mode === 'camera' ? 'active' : ''}`}
-                onClick={() => handleModeChange('camera')}
-              >
-                📸 Usar Mi Cámara
-              </button>
+            <h2 className="ar-title">✧ Filtro de Prueba AR ✧</h2>
+            <div className={`status-badge ${faceDetected ? 'status-ok' : 'status-waiting'}`}>
+              {faceDetected ? 'Rostro Detectado' : 'Buscando Rostro...'}
             </div>
-            
-            {mode === 'model' && (
-              <div className="model-selectors">
-                {models.map((m) => (
-                  <button 
-                    key={m.id}
-                    className={`model-btn ${selectedModel.id === m.id ? 'active' : ''}`}
-                    onClick={() => setSelectedModel(m)}
-                  >
-                    {m.name}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           {cameraError && <div className="camera-error-banner">{cameraError}</div>}
+          
+          {isModelLoading && (
+            <div className="ar-loading-overlay">
+              <div className="spinner"></div>
+              <p>Cargando modelo de Inteligencia Artificial...</p>
+              <p style={{fontSize: '0.75rem', opacity: 0.7, marginTop: '-0.5rem', textAlign: 'center', padding: '0 1rem'}}>
+                Esto puede tardar unos segundos la primera vez que entras. <br/>Asegúrate de tener buena conexión.
+              </p>
+            </div>
+          )}
 
-          {/* El Viewport Principal donde arrastramos los aretes */}
-          <div 
-            ref={viewportRef}
-            className="simulator-viewport"
-            onMouseMove={handleDrag}
-            onTouchMove={handleDrag}
-            onMouseUp={handleEndDrag}
-            onTouchEnd={handleEndDrag}
-            onMouseLeave={handleEndDrag}
-          >
-            {/* Fondo 1: Video de la Cámara Web */}
-            {mode === 'camera' && (
-              <video 
-                ref={videoRef}
-                autoPlay 
-                playsInline
-                className="webcam-feed"
-              ></video>
-            )}
+          {/* El Viewport Principal AR */}
+          <div className="simulator-viewport ar-viewport">
+            {/* Feed de la Cámara Web */}
+            <video 
+              ref={videoRef}
+              autoPlay 
+              playsInline
+              muted
+              className="webcam-feed"
+            ></video>
 
-            {/* Fondo 2: Foto de la Modelo */}
-            {mode === 'model' && (
-              <img 
-                src={selectedModel.url} 
-                alt="Modelo de prueba" 
-                className="model-background-img" 
-                draggable="false"
-              />
-            )}
+            {/* Canvas donde MediaPipe dibuja los aretes */}
+            <canvas 
+              ref={canvasRef}
+              className="ar-overlay-canvas"
+            ></canvas>
 
             {/* Instrucción Overlay */}
-            <div className="viewport-instruction-overlay">
-              Arrastra los aretes a tus orejas
-            </div>
-
-            {/* ARETE IZQUIERDO (SUPERPUESTO) */}
-            <div 
-              className={`draggable-earring ${dragState.target === 'left' ? 'dragging' : ''}`}
-              style={{
-                left: `${leftPosition.x}px`,
-                top: `${leftPosition.y}px`,
-                width: `${earringSize}px`,
-                height: `${earringSize}px`,
-                transform: `rotate(${earringRotation}deg)`,
-                opacity: earringOpacity / 100
-              }}
-              onMouseDown={(e) => handleStartDrag(e, 'left')}
-              onTouchStart={(e) => handleStartDrag(e, 'left')}
-            >
-              <img 
-                src={selectedProduct.image} 
-                alt="Arete Izquierdo" 
-                draggable="false"
-              />
-              <div className="earring-handle"></div>
-            </div>
-
-            {/* ARETE DERECHO (OPCIONAL/ESPEJO) */}
-            {showMirrorEarring && (
-              <div 
-                className={`draggable-earring right-earring ${dragState.target === 'right' ? 'dragging' : ''}`}
-                style={{
-                  left: `${rightPosition.x}px`,
-                  top: `${rightPosition.y}px`,
-                  width: `${earringSize}px`,
-                  height: `${earringSize}px`,
-                  transform: `rotate(${earringRotation}deg) scaleX(-1)`, // Espejado
-                  opacity: earringOpacity / 100
-                }}
-                onMouseDown={(e) => handleStartDrag(e, 'right')}
-                onTouchStart={(e) => handleStartDrag(e, 'right')}
-              >
-                <img 
-                  src={selectedProduct.image} 
-                  alt="Arete Derecho" 
-                  draggable="false"
-                />
-                <div className="earring-handle"></div>
+            {!faceDetected && !isModelLoading && !cameraError && (
+              <div className="viewport-instruction-overlay">
+                Por favor, sitúa tu rostro frente a la cámara
               </div>
             )}
           </div>
 
           {/* Acciones de la cámara */}
           <div className="viewport-actions">
-            <button className="gold-btn-outline icon-btn" onClick={handleResetPositions}>
-              Restablecer Posición
-            </button>
-            <button className="gold-btn capture-btn" onClick={handleCapture}>
-              💾 Descargar Foto de Prueba
+            <button className="gold-btn capture-btn" onClick={handleCapture} disabled={!faceDetected}>
+              📸 Descargar Foto
             </button>
           </div>
         </section>
@@ -394,30 +559,18 @@ export default function Simulator() {
               <div className="control-product-price">{selectedProduct.priceFormatted}</div>
             </div>
 
-            {/* Ajustes de escala y rotación */}
+            {/* Ajustes de AR */}
             <div className="adjustment-sliders">
-              <h4 className="control-section-heading">Ajustar Arete</h4>
+              <h4 className="control-section-heading">Ajustar Filtro</h4>
               
               <div className="slider-group">
-                <label>Tamaño: <span>{earringSize}px</span></label>
+                <label>Tamaño Relativo: <span>{earringSizeOffset > 0 ? '+' : ''}{earringSizeOffset}</span></label>
                 <input 
                   type="range" 
-                  min="30" 
-                  max="150" 
-                  value={earringSize} 
-                  onChange={(e) => setEarringSize(Number(e.target.value))}
-                  className="simulator-slider"
-                />
-              </div>
-
-              <div className="slider-group">
-                <label>Rotación: <span>{earringRotation}°</span></label>
-                <input 
-                  type="range" 
-                  min="-90" 
-                  max="90" 
-                  value={earringRotation} 
-                  onChange={(e) => setEarringRotation(Number(e.target.value))}
+                  min="-50" 
+                  max="100" 
+                  value={earringSizeOffset} 
+                  onChange={(e) => setEarringSizeOffset(Number(e.target.value))}
                   className="simulator-slider"
                 />
               </div>
@@ -432,6 +585,46 @@ export default function Simulator() {
                   onChange={(e) => setEarringOpacity(Number(e.target.value))}
                   className="simulator-slider"
                 />
+              </div>
+
+              <div className="slider-group">
+                <label>Desplazamiento X: <span>{earringOffsetX}px</span></label>
+                <input
+                  type="range"
+                  min="-150"
+                  max="150"
+                  value={earringOffsetX}
+                  onChange={(e) => setEarringOffsetX(Number(e.target.value))}
+                  className="simulator-slider"
+                />
+              </div>
+
+              <div className="slider-group">
+                <label>Desplazamiento Y: <span>{earringOffsetY}px</span></label>
+                <input
+                  type="range"
+                  min="-150"
+                  max="150"
+                  value={earringOffsetY}
+                  onChange={(e) => setEarringOffsetY(Number(e.target.value))}
+                  className="simulator-slider"
+                />
+              </div>
+
+              <div className="slider-group">
+                <label>Profundidad Z: <span>{earringOffsetZ}px</span></label>
+                <input
+                  type="range"
+                  min="-100"
+                  max="100"
+                  value={earringOffsetZ}
+                  onChange={(e) => setEarringOffsetZ(Number(e.target.value))}
+                  className="simulator-slider"
+                />
+              </div>
+
+              <div className="notice-text">
+                El arete se orienta automáticamente con la cabeza. Usa X/Y/Z solo para ajustar la posición del anclaje.
               </div>
 
               <div className="toggle-group">
