@@ -155,16 +155,18 @@ export default function Catalog() {
                   <h3 className="product-name" onClick={() => openProductDetails(product)}>{product.name}</h3>
                   <div className="product-footer-row">
                     <span className="product-price">{product.priceFormatted}</span>
-                    <Link 
-                      to={`/simulator?product=${product.id}`} 
-                      className="try-on-icon-link"
-                      title="Probar en simulador"
-                    >
-                      <span className="try-on-icon-bubble">
-                        <img src={cameraIcon} alt="" className="try-on-camera-icon" />
-                        Pruébatelo
-                      </span>
-                    </Link>
+                    {product.glbPath && (
+                      <Link 
+                        to={`/simulator?product=${product.id}`} 
+                        className="try-on-icon-link"
+                        title="Probar en simulador"
+                      >
+                        <span className="try-on-icon-bubble">
+                          <img src={cameraIcon} alt="" className="try-on-camera-icon" />
+                          Pruébatelo
+                        </span>
+                      </Link>
+                    )}
                   </div>
                 </div>
               </article>
@@ -212,12 +214,18 @@ export default function Catalog() {
                 </div>
                 
                 <div className="modal-actions">
-                  <Link 
-                    to={`/simulator?product=${selectedProduct.id}`} 
-                    className="gold-btn modal-try-btn"
-                  >
-                    📸 Probar en el Simulador 3D
-                  </Link>
+                  {selectedProduct.glbPath ? (
+                    <Link 
+                      to={`/simulator?product=${selectedProduct.id}`} 
+                      className="gold-btn modal-try-btn"
+                    >
+                      📸 Probar en el Simulador 3D
+                    </Link>
+                  ) : (
+                    <button className="gold-btn modal-try-btn disabled-try-btn" disabled>
+                      📷 Probador 3D (Próximamente)
+                    </button>
+                  )}
                   
                   <div className="modal-delivery-info">
                     <span className="info-icon">✓</span> Envío gratis a nivel nacional | Incluye caja de regalo TAOS

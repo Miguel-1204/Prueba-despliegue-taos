@@ -517,6 +517,14 @@
   padding: 1rem;
 }
 
+.disabled-try-btn {
+  background-color: #cccccc !important;
+  color: #666666 !important;
+  border-color: #cccccc !important;
+  cursor: not-allowed !important;
+  opacity: 0.7;
+}
+
 .modal-delivery-info {
   font-size: 0.75rem;
   color: var(--text-muted);

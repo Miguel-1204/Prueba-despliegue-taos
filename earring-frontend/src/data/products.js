@@ -40,6 +40,7 @@ export const products = [
     price: 135000,
     priceFormatted: '$135.000 COP',
     image: doradoBlanco,
+    glbPath: '/TAOS_img3D/Flores_de_mi_tierra/Dorado_blanco.glb',
     description: 'Elegantes aretes inspirados en la flora silvestre. Baño de oro de 24k combinado con resinas de alta calidad blanca perlada. Una joya versátil ideal para eventos formales o el uso diario sofisticado.',
     details: [
       'Hecho a mano en Colombia',
@@ -57,6 +58,7 @@ export const products = [
     price: 145000,
     priceFormatted: '$145.000 COP',
     image: doradoPerlado,
+    glbPath: '/TAOS_img3D/Flores_de_mi_tierra/Dorado_perlado.glb',
     description: 'Aretes con un brillo perlado sublime que captura la luz de manera mágica. El contorno dorado realza la delicadeza de los pétalos de textura perlada orgánica. Un diseño exclusivo de la casa TAOS.',
     details: [
       'Hecho a mano en Colombia',
@@ -74,6 +76,7 @@ export const products = [
     price: 125000,
     priceFormatted: '$125.000 COP',
     image: plataPlateado,
+    glbPath: '/TAOS_img3D/Flores_de_mi_tierra/Plata_plateada.glb',
     description: 'Un diseño sobrio y moderno con baño de plata de ley de alta pureza. Su textura cepillada a mano aporta un brillo sutil contemporáneo. Perfecto para los amantes de la joyería plateada de diseño minimalista.',
     details: [
       'Hecho a mano en Colombia',
@@ -91,6 +94,7 @@ export const products = [
     price: 138000,
     priceFormatted: '$138.000 COP',
     image: plateadoFucsia,
+    glbPath: '/TAOS_img3D/Flores_de_mi_tierra/Plateado_fucsia.glb',
     description: 'El contraste perfecto entre el brillo metálico de la plata y la intensidad vibrante del fucsia. Una pieza llena de energía, ideal para ser el centro de atención de cualquier atuendo festivo o elegante.',
     details: [
       'Hecho a mano en Colombia',
@@ -108,6 +112,7 @@ export const products = [
     price: 150000,
     priceFormatted: '$150.000 COP',
     image: verdeEsmeralda,
+    glbPath: '/TAOS_img3D/Flores_de_mi_tierra/Verde_esmeralda.glb',
     description: 'Inspirados en la riqueza natural y las esmeraldas colombianas. Esta flor combina la elegancia del baño de oro con un esmalte color verde esmeralda profundo que irradia misticismo y sofisticación.',
     details: [
       'Hecho a mano en Colombia',
@@ -127,6 +132,7 @@ export const products = [
     price: 160000,
     priceFormatted: '$160.000 COP',
     image: mariposaBlancoRojo,
+    glbPath: '/TAOS_img3D/Mariposas/M_Blanco_con_rojo.glb',
     description: 'Aretes colgantes tipo mariposa que emulan la fragilidad y belleza de las alas de la naturaleza. Los detalles pintados a mano en tonos rojos y blancos crean un patrón dinámico e hipnótico al moverse.',
     details: [
       'Hecho a mano en Colombia',
@@ -144,6 +150,7 @@ export const products = [
     price: 165000,
     priceFormatted: '$165.000 COP',
     image: mariposaMultiPastel,
+    glbPath: '/TAOS_img3D/Mariposas/M_Multi_pastel.glb',
     description: 'Una sinfonía de tonos pastel que evoca la dulzura de la primavera. Colores degradados en azul cielo, lila y rosa pálido sobre un chasis dorado ultraligero que revoloteará elegantemente con cada movimiento de cabeza.',
     details: [
       'Hecho a mano en Colombia',
@@ -161,6 +168,7 @@ export const products = [
     price: 170000,
     priceFormatted: '$170.000 COP',
     image: mariposaNegraMulti,
+    glbPath: '/TAOS_img3D/Mariposas/M_Negra_multi_color.glb',
     description: 'Una pieza dramática de alta sofisticación. El fondo negro profundo hace resaltar los destellos multicolor de las alas pintadas a mano. Ideal para la noche, aportando un toque misterioso, sofisticado y exclusivo.',
     details: [
       'Hecho a mano en Colombia',
@@ -178,6 +186,7 @@ export const products = [
     price: 158000,
     priceFormatted: '$158.000 COP',
     image: mariposaTejidaBlanca,
+    glbPath: '/TAOS_img3D/Mariposas/M_Tegida_blanca.glb',
     description: 'Una obra de arte textil y joyería. Esta mariposa combina filigrana y micro-tejido manual en hilos blancos sobre un armazón de baño de oro. Ofrece una textura orgánica única y una ligereza inigualable.',
     details: [
       'Hecho a mano en Colombia',
@@ -197,6 +206,7 @@ export const products = [
     price: 155000,
     priceFormatted: '$155.000 COP',
     image: maxiFlorRojo,
+    glbPath: '/TAOS_img3D/Maxi_flor/Maxi_flor_rojo.glb',
     description: 'Una explosión de color y elegancia. El rojo intenso de esta maxi flor artesanal la convierte en la pieza protagonista de cualquier conjunto. Perfecta para quienes buscan un accesorio que haga una declaración audaz.',
     details: [
       'Hecho a mano en Colombia',
@@ -214,6 +224,7 @@ export const products = [
     price: 168000,
     priceFormatted: '$168.000 COP',
     image: maxiFlorBoreal,
+    glbPath: '/TAOS_img3D/Maxi_flor/Maxi_flor_boreal.glb',
     description: 'Inspirada en las auroras boreales, esta maxi flor captura el misterio y la belleza de los cielos nocturnos del norte. Sus tonos iridiscentes azules, verdes y púrpura la hacen verdaderamente única.',
     details: [
       'Hecho a mano en Colombia',
@@ -231,6 +242,7 @@ export const products = [
     price: 162000,
     priceFormatted: '$162.000 COP',
     image: maxiFlorMultiColor,
+    glbPath: '/TAOS_img3D/Maxi_flor/Maxi_flor_multi_color.glb',
     description: 'Una celebración de colores que evocan la alegría y la diversidad de la flora tropical colombiana. Cada pétalo luce un tono diferente, creando un efecto visual impactante y festivo.',
     details: [
       'Hecho a mano en Colombia',
@@ -248,6 +260,7 @@ export const products = [
     price: 158000,
     priceFormatted: '$158.000 COP',
     image: maxiFlorNegro,
+    glbPath: '/TAOS_img3D/Maxi_flor/Maxi_flor_negro.glb',
     description: 'La sofisticación en su máxima expresión. El negro profundo de esta maxi flor aporta un contraste dramático sobre cualquier atuendo, convirtiéndola en un accesorio de lujo atemporal para la mujer moderna.',
     details: [
       'Hecho a mano en Colombia',
@@ -265,6 +278,7 @@ export const products = [
     price: 150000,
     priceFormatted: '$150.000 COP',
     image: maxiFlorPlateada,
+    glbPath: '/TAOS_img3D/Maxi_flor/Maxi_flor_plateada.glb',
     description: 'Elegancia clásica con un acabado plateado impecable. Esta maxi flor es la elección perfecta para quienes buscan un arete grande pero discreto, con el brillo refinado de la plata de ley.',
     details: [
       'Hecho a mano en Colombia',
@@ -282,6 +296,7 @@ export const products = [
     price: 155000,
     priceFormatted: '$155.000 COP',
     image: maxiFlorTonosTierra,
+    glbPath: '/TAOS_img3D/Maxi_flor/Maxi_flor_tonos_tierra.glb',
     description: 'Una oda a la naturaleza en sus colores más cálidos. Los tonos ocre, café, siena y terracota de esta maxi flor crean una armonía terrosa que complementa a la perfección los atuendos en colores neutros y naturales.',
     details: [
       'Hecho a mano en Colombia',
