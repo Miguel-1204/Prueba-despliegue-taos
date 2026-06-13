@@ -95,6 +95,7 @@
   display: flex;
   justify-content: center;
   align-items: center;
+  flex-direction: column;
 }
 
 .hero-circle-backdrop {
@@ -104,6 +105,80 @@
   border-radius: 50%;
   background: radial-gradient(circle, rgba(197, 168, 128, 0.15) 0%, rgba(197, 168, 128, 0.02) 70%);
   z-index: 1;
+}
+
+.hero-carousel {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  max-width: 380px;
+}
+
+.hero-carousel-arrow {
+  border: none;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text-dark);
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.2s ease;
+  display: grid;
+  place-items: center;
+}
+
+.hero-carousel-arrow:hover {
+  transform: scale(1.05);
+  background: rgba(255, 255, 255, 1);
+}
+
+.hero-carousel-arrow--left {
+  margin-right: 0.75rem;
+}
+
+.hero-carousel-arrow--right {
+  margin-left: 0.75rem;
+}
+
+.hero-carousel-dots {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.5rem;
+  z-index: 2;
+}
+
+.hero-carousel-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.65);
+  cursor: pointer;
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
+
+.hero-carousel-dot.active {
+  background: var(--primary-gold);
+  transform: scale(1.1);
+}
+
+.hero-badge {
+  position: absolute;
+  bottom: 5%;
+  right: 5%;
+  background-color: var(--bg-secondary);
+  padding: 1rem 1.5rem;
+  border-radius: 4px;
+  box-shadow: var(--shadow-md);
+  border-left: 3px solid var(--primary-gold);
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
 }
 
 @media (max-width: 576px) {

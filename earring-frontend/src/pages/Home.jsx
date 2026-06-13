@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { collections, products } from '../data/products';
 import './Home.css';
@@ -10,6 +11,17 @@ const featuredProducts = products.filter(p =>
 );
 
 export default function Home() {
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const activeHeroProduct = featuredProducts[carouselIndex] || featuredProducts[0];
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCarouselIndex((prev) => (prev + 1) % featuredProducts.length);
+    }, 20000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   return (
     <div className="home-page animate-fade-in">
       {/* 1. Hero Section */}
@@ -35,15 +47,26 @@ export default function Home() {
           </div>
           <div className="hero-visual">
             <div className="hero-circle-backdrop"></div>
-            {/* Usamos el primer arete destacado (Flor Dorado Blanco) como imagen principal */}
-            <img 
-              src={featuredProducts[0].image} 
-              alt="Flor Dorado Blanco TAOS" 
-              className="hero-main-img animate-scale-in" 
-            />
+            <div className="hero-carousel">
+              <img
+                src={activeHeroProduct.image}
+                alt={activeHeroProduct.name}
+                className="hero-main-img animate-scale-in"
+              />
+            </div>
+            <div className="hero-carousel-dots">
+              {featuredProducts.map((product, index) => (
+                <button
+                  key={product.id}
+                  className={`hero-carousel-dot ${index === carouselIndex ? 'active' : ''}`}
+                  onClick={() => setCarouselIndex(index)}
+                  aria-label={`Ver ${product.name}`}
+                />
+              ))}
+            </div>
             <div className="hero-badge">
-              <span className="badge-title">100% Artesanal</span>
-              <span className="badge-desc">Baño de oro 24k</span>
+              <span className="badge-title">{activeHeroProduct.name}</span>
+              <span className="badge-desc">{activeHeroProduct.collection}</span>
             </div>
           </div>
         </div>
