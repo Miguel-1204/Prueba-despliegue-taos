@@ -3,6 +3,12 @@
   padding-top: 100px; /* Navbar space */
 }
 
+@media (max-width: 768px) {
+  .home-page {
+    padding-top: 80px;
+  }
+}
+
 /* 1. Hero Section */
 .hero-section {
   padding: 5rem 0;

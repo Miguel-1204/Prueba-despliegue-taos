@@ -15,6 +15,12 @@
   transition: var(--transition-smooth);
 }
 
+@media (max-width: 768px) {
+  .navbar {
+    height: 70px;
+  }
+}
+
 .navbar.scrolled {
   height: 80px;
   background-color: #ffffff;
@@ -40,6 +46,12 @@
   object-fit: contain;
   transition: var(--transition-smooth);
   filter: drop-shadow(0 2px 5px rgba(0,0,0,0.04));
+}
+
+@media (max-width: 768px) {
+  .navbar-logo {
+    height: 65px;
+  }
 }
 
 .navbar.scrolled .navbar-logo {

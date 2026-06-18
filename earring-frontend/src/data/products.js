@@ -49,6 +49,15 @@ import maxiFlorNegroGLB from '../assets/TAOS_img3D/Maxi_flor/Maxi_flor_negro.glb
 import maxiFlorPlateadaGLB from '../assets/TAOS_img3D/Maxi_flor/Maxi_flor_plateada.glb?url';
 import maxiFlorTonosTierraGLB from '../assets/TAOS_img3D/Maxi_flor/Maxi_flor_tonos_tierra.glb?url';
 
+import mediaFlorMultiColorGLB from '../assets/TAOS_img3D/Media_flor/Media_flor_multicolor.glb?url';
+import mediaFlorOpaloGLB from '../assets/TAOS_img3D/Media_flor/Media_flor_opalo.glb?url';
+import mediaFlorRojoGLB from '../assets/TAOS_img3D/Media_flor/Media_flor_rojo.glb?url';
+import mediaFlorTonosTierraGLB from '../assets/TAOS_img3D/Media_flor/Media_flor_tonos_tierra.glb?url';
+
+import orquideaAmarillaGLB from '../assets/TAOS_img3D/Orquidea/Orquidea_amarrilla.glb?url';
+import orquideaLilaFucsiaGLB from '../assets/TAOS_img3D/Orquidea/Orquidea_lila_con_fucsia.glb?url';
+import orquideaPaloDeRosaGLB from '../assets/TAOS_img3D/Orquidea/Orquidea_palo_de_rosa.glb?url';
+
 export const products = [
   // ── Flores de mi Tierra ──────────────────────────────────────────────────
   {
@@ -335,6 +344,7 @@ export const products = [
     price: 128000,
     priceFormatted: '$128.000 COP',
     image: mediaFlorMultiColor,
+    glbPath: mediaFlorMultiColorGLB,
     description: 'La colección Media Flor ofrece un tamaño intermedio perfecto para el uso cotidiano sin renunciar a la elegancia. Esta versión multicolor es vibrante y versátil, combinando con una gran variedad de estilos.',
     details: [
       'Hecho a mano en Colombia',
@@ -352,6 +362,7 @@ export const products = [
     price: 138000,
     priceFormatted: '$138.000 COP',
     image: mediaFlorOpalo,
+    glbPath: mediaFlorOpaloGLB,
     description: 'Delicadeza y misticismo en un solo arete. El acabado ópalo iridiscente de esta media flor cambia de tonalidad con la luz, revelando destellos de azul, rosa, verde y dorado que evocan las piedras preciosas más codiciadas.',
     details: [
       'Hecho a mano en Colombia',
@@ -369,6 +380,7 @@ export const products = [
     price: 125000,
     priceFormatted: '$125.000 COP',
     image: mediaFlorRojo,
+    glbPath: mediaFlorRojoGLB,
     description: 'Pasión y elegancia en tamaño ideal. La media flor en rojo intenso es el complemento perfecto para quienes buscan un accesorio llamativo pero de tamaño moderado, ideal para el día a día o eventos especiales.',
     details: [
       'Hecho a mano en Colombia',
@@ -386,6 +398,7 @@ export const products = [
     price: 128000,
     priceFormatted: '$128.000 COP',
     image: mediaFlorTonosTierra,
+    glbPath: mediaFlorTonosTierraGLB,
     description: 'Suavidad y naturalidad en tamaño perfecto. Los tonos tierra cálidos de esta media flor la convierten en el arete más versátil de la colección, combinando con outfits casuales, de oficina o de evento.',
     details: [
       'Hecho a mano en Colombia',
@@ -405,6 +418,7 @@ export const products = [
     price: 175000,
     priceFormatted: '$175.000 COP',
     image: orquideaAmarilla,
+    glbPath: orquideaAmarillaGLB,
     description: 'La orquídea es el símbolo nacional de Colombia, y estos aretes rinden homenaje a su esplendor. El amarillo radiante evoca el sol tropical y la exuberancia de los jardines colombianos, capturado en una joya artesanal de lujo.',
     details: [
       'Hecho a mano en Colombia',
@@ -422,6 +436,7 @@ export const products = [
     price: 180000,
     priceFormatted: '$180.000 COP',
     image: orquideaLilaFucsia,
+    glbPath: orquideaLilaFucsiaGLB,
     description: 'Un himno a la Cattleya trianae, la flor de Colombia. Los tonos lila y fucsia de esta orquídea artesanal capturan la majestuosidad de nuestra flor nacional, creando una pieza de colección que toda mujer colombiana debe atesorar.',
     details: [
       'Hecho a mano en Colombia',
@@ -439,6 +454,7 @@ export const products = [
     price: 175000,
     priceFormatted: '$175.000 COP',
     image: orquideaPaloDeRosa,
+    glbPath: orquideaPaloDeRosaGLB,
     description: 'Delicadeza en estado puro. El tono palo de rosa de esta orquídea artesanal transmite feminidad y sofisticación. Ideal para regalar o para lucir en ocasiones especiales donde se quiere un accesorio de lujo discreto.',
     details: [
       'Hecho a mano en Colombia',
