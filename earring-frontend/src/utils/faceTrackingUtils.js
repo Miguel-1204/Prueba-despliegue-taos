@@ -180,7 +180,11 @@ export function onFaceLandmarkerResults(
   rightEarringGroup,
   videoWidth,
   videoHeight,
-  setFaceDetected
+  setFaceDetected,
+  offsetX = 0,
+  offsetY = 0,
+  offsetZ = 0,
+  sizeOffset = 0
 ) {
   const landmarks = result.faceLandmarks?.[0];
   const matrices = result.facialTransformationMatrixes?.[0];
@@ -287,8 +291,11 @@ export function onFaceLandmarkerResults(
         leftEarringGroup.visible = false;
       } else {
         leftEarringGroup.position.copy(smoothedLeft);
+        leftEarringGroup.position.x += offsetX;
+        leftEarringGroup.position.y += offsetY;
+        leftEarringGroup.position.z += offsetZ;
         leftEarringGroup.quaternion.copy(smoothedQ);
-        leftEarringGroup.scale.setScalar(scaleMultiplier);
+        leftEarringGroup.scale.setScalar(scaleMultiplier * (1 + sizeOffset / 100));
         leftEarringGroup.visible = true;
       }
     }
@@ -298,8 +305,11 @@ export function onFaceLandmarkerResults(
         rightEarringGroup.visible = false;
       } else {
         rightEarringGroup.position.copy(smoothedRight);
+        rightEarringGroup.position.x += offsetX;
+        rightEarringGroup.position.y += offsetY;
+        rightEarringGroup.position.z += offsetZ;
         rightEarringGroup.quaternion.copy(smoothedQ);
-        rightEarringGroup.scale.setScalar(scaleMultiplier);
+        rightEarringGroup.scale.setScalar(scaleMultiplier * (1 + sizeOffset / 100));
         rightEarringGroup.visible = true;
       }
     }

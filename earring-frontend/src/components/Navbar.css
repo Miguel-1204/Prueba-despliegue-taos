@@ -24,7 +24,7 @@
 .navbar.scrolled {
   height: 80px;
   background-color: #ffffff;
-  border-bottom: 2px solid var(--primary-gold);
+  border-bottom: 2px solid var(--logo-purple);
   box-shadow: var(--shadow-md);
 }
 
@@ -114,14 +114,14 @@
   left: 50%;
   width: 0;
   height: 1px;
-  background-color: var(--primary-gold);
+  background-color: var(--logo-purple);
   transition: var(--transition-smooth);
   transform: translateX(-50%);
 }
 
 .nav-link.active {
   opacity: 1;
-  color: var(--dark-gold);
+  color: var(--logo-purple);
 }
 
 .nav-link.active::after {
