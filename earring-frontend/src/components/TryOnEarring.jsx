@@ -229,10 +229,35 @@ export default function TryOnEarring({
   const initScene = useCallback(() => {
     const scene = new THREE.Scene();
 
-    // Usamos una escena base con proporciones estándar; luego se ajusta al tamaño
-    // real del stream de la cámara para evitar desalineaciones en móvil.
-    const aspect = VIDEO_WIDTH / VIDEO_HEIGHT;
-    const frustumHalf = VIDEO_HEIGHT / 2;
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      console.warn('⚠️ Canvas ref no disponible, se reintentará después');
+      return;
+    }
+
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({
+        canvas,
+        alpha: true, // Hacerlo transparente para ver el video HTML debajo
+        antialias: true,
+        powerPreference: 'high-performance',
+      });
+      renderer.setClearColor(0x000000, 0); // Fondo totalmente transparente
+    } catch (webglErr) {
+      console.error('❌ Error creando WebGLRenderer:', webglErr);
+      setError('Tu navegador no soporta WebGL. Prueba con Chrome o Edge.');
+      return;
+    }
+    renderer.setSize(canvas.clientWidth || VIDEO_WIDTH, canvas.clientHeight || VIDEO_HEIGHT);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    rendererRef.current = renderer;
+
+    // Cámara Ortográfica — usa dimensiones CSS del canvas (lo que el usuario ve)
+    const initW = canvas.clientWidth || VIDEO_WIDTH;
+    const initH = canvas.clientHeight || VIDEO_HEIGHT;
+    const aspect = initW / initH;
+    const frustumHalf = initH / 2;
     const camera = new THREE.OrthographicCamera(
       -frustumHalf * aspect,
       frustumHalf * aspect,
@@ -244,18 +269,6 @@ export default function TryOnEarring({
     camera.position.set(0, 0, CAMERA_DISTANCE);
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
-
-    // Plano de fondo con textura del video.
-    // IMPORTANTE: El color debe ser 0xffffff para que la textura del video
-    // no se vea oscura (se multiplica el color del material por la textura).
-    const bgGeometry = new THREE.PlaneGeometry(VIDEO_WIDTH, VIDEO_HEIGHT);
-    const bgMaterial = new THREE.MeshBasicMaterial({
-      color: 0xe8e8e8,
-      side: THREE.DoubleSide,
-    });
-    const bgMesh = new THREE.Mesh(bgGeometry, bgMaterial);
-    bgMesh.position.z = -CAMERA_DISTANCE + 1;
-    scene.add(bgMesh);
 
     // Iluminación simple (sin sombras)
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
@@ -289,78 +302,45 @@ export default function TryOnEarring({
     rightSubGroupRef.current = rightSubGroup;
 
     sceneRef.current = scene;
-
-    // Renderer (con manejo seguro si el canvas no está listo)
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      console.warn('⚠️ Canvas ref no disponible, se reintentará después');
-      return;
-    }
-
-    let renderer;
-    try {
-      renderer = new THREE.WebGLRenderer({
-        canvas,
-        alpha: false,
-        antialias: true,
-        powerPreference: 'high-performance',
-      });
-    } catch (webglErr) {
-      console.error('❌ Error creando WebGLRenderer:', webglErr);
-      setError('Tu navegador no soporta WebGL. Prueba con Chrome o Edge.');
-      return;
-    }
-    renderer.setSize(VIDEO_WIDTH, VIDEO_HEIGHT);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    rendererRef.current = renderer;
-
   }, []);
 
   const syncSceneToVideo = useCallback(() => {
-    const video = videoRef.current;
+    const canvas = canvasRef.current;
     const renderer = rendererRef.current;
     const camera = cameraRef.current;
-    const scene = sceneRef.current;
 
-    if (!video || !renderer || !camera || !scene) return;
+    if (!canvas || !renderer || !camera) return;
 
-    const width = video.videoWidth || VIDEO_WIDTH;
-    const height = video.videoHeight || VIDEO_HEIGHT;
+    const cW = canvas.clientWidth;
+    const cH = canvas.clientHeight;
+    if (!cW || !cH) return;
 
-    if (!width || !height || width <= 0 || height <= 0) return;
-
-    const aspect = width / height;
-    const frustumHalf = height / 2;
+    // El contenedor ahora es 16:9, igual que la cámara → no hay recorte
+    const aspect = cW / cH;
+    const frustumHalf = cH / 2;
     camera.left = -frustumHalf * aspect;
     camera.right = frustumHalf * aspect;
     camera.top = frustumHalf;
     camera.bottom = -frustumHalf;
     camera.updateProjectionMatrix();
 
-    renderer.setSize(width, height, false);
+    renderer.setSize(cW, cH, false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-    const bgMesh = scene.children.find(
-      (child) => child.isMesh && child.material?.type === 'MeshBasicMaterial'
-    );
-    if (bgMesh && bgMesh.geometry) {
-      const currentWidth = bgMesh.geometry.parameters?.width;
-      const currentHeight = bgMesh.geometry.parameters?.height;
-      if (currentWidth !== width || currentHeight !== height) {
-        bgMesh.geometry.dispose();
-        bgMesh.geometry = new THREE.PlaneGeometry(width, height);
-      }
-    }
   }, []);
 
   // ---- Inicializar cámara ----
   const startCamera = useCallback(async () => {
     try {
+      // Usamos window.screen para evitar que abrir la consola en un lateral confunda la detección
+      const isPortrait = window.screen.height > window.screen.width;
+      const idealWidth = isPortrait ? 720 : 1280;
+      const idealHeight = isPortrait ? 1280 : 720;
+
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          width: { ideal: VIDEO_WIDTH },
-          height: { ideal: VIDEO_HEIGHT },
           facingMode: 'user',
+          width: { ideal: idealWidth },
+          height: { ideal: idealHeight },
         },
         audio: false,
       });
@@ -458,14 +438,27 @@ export default function TryOnEarring({
           const result = faceLandmarker.detectForVideo(video, performance.now());
 
           if (result) {
-            const videoWidth = video.videoWidth || VIDEO_WIDTH;
-            const videoHeight = video.videoHeight || VIDEO_HEIGHT;
+            const canvas = canvasRef.current;
+            // Con contenedor 16:9 e cámara 16:9, no hay recorte: usar dims del canvas directamente
+            const displayWidth = canvas ? canvas.clientWidth : VIDEO_WIDTH;
+            const displayHeight = canvas ? canvas.clientHeight : VIDEO_HEIGHT;
+
+            // Sincronizar frustum si el contenedor cambió de tamaño
+            if (cameraRef.current) {
+              const cam = cameraRef.current;
+              const frustumW = cam.right - cam.left;
+              const frustumH = cam.top - cam.bottom;
+              if (Math.abs(frustumW - displayWidth) > 1 || Math.abs(frustumH - displayHeight) > 1) {
+                syncSceneToVideo();
+              }
+            }
+
             onFaceLandmarkerResults(
               result,
               leftEarringGroupRef.current,
               rightEarringGroupRef.current,
-              videoWidth,
-              videoHeight,
+              displayWidth,
+              displayHeight,
               setFaceDetected,
               currentProps.offsetX,
               currentProps.offsetY,
@@ -522,24 +515,7 @@ export default function TryOnEarring({
     setCameraStarted(true);
   }, [cameraStarted, startCamera, initFaceLandmarker, startLoop]);
 
-  // ---- Actualizar textura de fondo con el feed de la cámara ----
-  useEffect(() => {
-    if (!cameraReady || !videoRef.current || !sceneRef.current) return;
-    const video = videoRef.current;
-    const scene = sceneRef.current;
-    const bgMesh = scene.children.find(
-      (c) => c.isMesh && c.material?.type === 'MeshBasicMaterial'
-    );
-    if (bgMesh) {
-      const vt = new THREE.VideoTexture(video);
-      vt.minFilter = THREE.LinearFilter;
-      vt.magFilter = THREE.LinearFilter;
-      vt.format = THREE.RGBAFormat;
-      bgMesh.material.map = vt;
-      bgMesh.material.needsUpdate = true;
-      console.log('🎥 Textura de video activa en el fondo');
-    }
-  }, [cameraReady]);
+  // (Textura de video eliminada: ahora usamos el elemento HTML <video> de fondo)
 
   useEffect(() => {
     if (!sceneRef.current || !rendererRef.current) return;
@@ -628,43 +604,39 @@ export default function TryOnEarring({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       {/* 
-        El video NO debe estar con display:none porque los navegadores detienen su render.
-        Lo colocamos en una posición invisible de 1x1 píxeles para mantenerlo activo.
+        El video es el fondo de la cámara. visibility:hidden en vez de display:none
+        para que el navegador no detenga el stream mientras la IA lo procesa.
       */}
       <video
         ref={videoRef}
-        width={VIDEO_WIDTH}
-        height={VIDEO_HEIGHT}
+        autoPlay
         playsInline
         muted
         style={{
           position: 'absolute',
-          top: '-9999px',
-          left: '-9999px',
-          width: '1px',
-          height: '1px',
-          opacity: 0,
-          pointerEvents: 'none',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          transform: 'scaleX(-1)',
+          borderRadius: '8px',
+          visibility: cameraStarted ? 'visible' : 'hidden',
         }}
       />
-      {showCanvas && (
-        <canvas
-          ref={canvasRef}
-          width={VIDEO_WIDTH}
-          height={VIDEO_HEIGHT}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            display: 'block',
-            objectFit: 'cover',
-            backgroundColor: '#000',
-            borderRadius: '8px',
-            transform: 'scaleX(-1)', // Espejado para vista natural del usuario
-          }}
-        />
-      )}
+      {/* Canvas siempre montado para que canvasRef esté disponible desde el inicio */}
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          display: 'block',
+          pointerEvents: 'none',
+          transform: 'scaleX(-1)',
+          opacity: cameraStarted ? 1 : 0,
+        }}
+      />
       {!cameraRequested && (
         <div style={{
           position: 'absolute',
