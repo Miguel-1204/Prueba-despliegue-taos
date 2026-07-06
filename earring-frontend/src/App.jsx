@@ -19,7 +19,7 @@ function ScrollToTop() {
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename="/Prueba-despliegue-taos/">
       <ScrollToTop />
       <div className="app-container">
         {/* Barra de Navegación Premium */}
