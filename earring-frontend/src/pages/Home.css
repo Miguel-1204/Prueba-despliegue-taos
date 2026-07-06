@@ -16,7 +16,8 @@
   align-items: center;
   position: relative;
   overflow: hidden;
-  background: radial-gradient(circle at 80% 20%, rgba(197, 168, 128, 0.08) 0%, transparent 60%);
+  background: radial-gradient(circle at 80% 20%, rgba(197, 168, 128, 0.08) 0%, transparent 60%),
+    radial-gradient(circle at 20% 40%, rgba(108, 79, 162, 0.12) 0%, transparent 45%);
 }
 
 .hero-container {
@@ -63,7 +64,7 @@
 }
 
 .hero-title span {
-  color: var(--primary-gold);
+  color: var(--logo-purple);
   font-style: italic;
   font-weight: 400;
 }
@@ -86,6 +87,12 @@
   display: flex;
   gap: 1.25rem;
   flex-wrap: wrap;
+}
+
+@media (max-width: 992px) {
+  .hero-actions {
+    justify-content: center;
+  }
 }
 
 .hero-btn {
@@ -168,7 +175,7 @@
 }
 
 .hero-carousel-dot.active {
-  background: var(--primary-gold);
+  background: linear-gradient(135deg, var(--logo-purple), var(--logo-pink));
   transform: scale(1.1);
 }
 
@@ -215,7 +222,7 @@
   padding: 1rem 1.5rem;
   border-radius: 4px;
   box-shadow: var(--shadow-md);
-  border-left: 3px solid var(--primary-gold);
+  border-left: 3px solid var(--logo-purple);
   z-index: 3;
   display: flex;
   flex-direction: column;
@@ -303,7 +310,7 @@
 .section-divider {
   width: 50px;
   height: 2px;
-  background-color: var(--primary-gold);
+  background: linear-gradient(90deg, var(--primary-gold), var(--logo-purple));
   margin: 0 auto;
 }
 
@@ -343,7 +350,7 @@
 .collection-card:hover {
   transform: translateY(-8px);
   box-shadow: var(--shadow-lg);
-  border-color: rgba(197, 168, 128, 0.4);
+  border-color: rgba(108, 79, 162, 0.25);
 }
 
 .collection-img-wrapper {
@@ -402,7 +409,7 @@
 }
 
 .collection-link:hover {
-  color: var(--primary-gold);
+  color: var(--logo-purple);
 }
 
 .collection-link:hover span {
@@ -422,16 +429,36 @@
   gap: 2.5rem;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1100px) {
   .featured-grid {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 760px) {
+  .featured-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .featured-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 420px) {
   .featured-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.featured-action {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
 }
 
 .featured-item-card {
@@ -529,7 +556,7 @@
 /* 5. AR Promo Section */
 .ar-promo-section {
   padding: 7rem 0;
-  background: linear-gradient(135deg, rgba(197, 168, 128, 0.05) 0%, rgba(250, 249, 246, 1) 100%);
+  background: linear-gradient(135deg, rgba(108, 79, 162, 0.08) 0%, rgba(231, 155, 192, 0.08) 35%, rgba(250, 249, 246, 1) 100%);
   border-top: 1px solid var(--border-color);
 }
 
@@ -563,7 +590,7 @@
 .ar-promo-tag {
   font-size: 0.75rem;
   letter-spacing: 0.2em;
-  color: var(--primary-gold);
+  color: var(--logo-purple);
   font-weight: 600;
   text-transform: uppercase;
   margin-bottom: 1.25rem;
@@ -628,7 +655,7 @@
 .ar-phone-screen {
   flex-grow: 1;
   position: relative;
-  background: radial-gradient(circle, #f9eae1 0%, #e2cbbd 100%);
+  background: radial-gradient(circle at top center, rgba(231, 155, 192, 0.22) 0%, rgba(108, 79, 162, 0.12) 42%, #f9eae1 100%);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -648,7 +675,7 @@
 .ar-mock-dot {
   width: 6px;
   height: 6px;
-  background-color: #ff3b30;
+  background-color: var(--logo-pink);
   border-radius: 50%;
   animation: pulse 1.5s infinite;
 }

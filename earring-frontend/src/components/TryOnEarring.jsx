@@ -37,6 +37,14 @@ const CAMERA_DISTANCE = 900;
 export default function TryOnEarring({
   modelPath = '/models/arete.glb',
   showCanvas = true,
+  offsetX = 0,
+  offsetY = 0,
+  offsetZ = 0,
+  sizeOffset = 0,
+  rotationX = 0,
+  rotationY = 0,
+  rotationZ = 0,
+  opacity = 100,
 }) {
   // ---- Refs ----
   const videoRef = useRef(null);
@@ -49,6 +57,8 @@ export default function TryOnEarring({
   // Grupos individuales para los aretes izquierdo y derecho
   const leftEarringGroupRef = useRef(null);
   const rightEarringGroupRef = useRef(null);
+  const leftSubGroupRef = useRef(null);
+  const rightSubGroupRef = useRef(null);
   const leftModelRef = useRef(null);
   const rightModelRef = useRef(null);
 
@@ -56,57 +66,46 @@ export default function TryOnEarring({
   const animationIdRef = useRef(null);
   const isRunningRef = useRef(false);
   const modelPathRef = useRef(modelPath);
+  const propsRef = useRef({ offsetX: 0, offsetY: 0, offsetZ: 0, sizeOffset: 0, rotationX: 0, rotationY: 0, rotationZ: 0 });
 
   // ---- Estado ----
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraRequested, setCameraRequested] = useState(false);
+  const [cameraStarted, setCameraStarted] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
   const [error, setError] = useState(null);
   const [modelLoading, setModelLoading] = useState(true);
 
   // ---- Inicializar escena Three.js ----  
   const clearModelGroups = useCallback(() => {
-    const leftGroup = leftEarringGroupRef.current;
-    const rightGroup = rightEarringGroupRef.current;
+    const leftSubGroup = leftSubGroupRef.current;
+    const rightSubGroup = rightSubGroupRef.current;
 
-    if (leftGroup) {
-      while (leftGroup.children.length > 1) {
-        const child = leftGroup.children[1];
-        leftGroup.remove(child);
-      }
-      if (leftModelRef.current) {
-        leftModelRef.current.traverse((child) => {
-          if (child.isMesh) {
-            child.geometry?.dispose?.();
-            if (Array.isArray(child.material)) {
-              child.material.forEach((material) => material?.dispose?.());
-            } else {
-              child.material?.dispose?.();
+    const clearGroup = (groupRef, modelRef) => {
+      if (!groupRef) return;
+      while (groupRef.children.length > 0) {
+        const child = groupRef.children[0];
+        groupRef.remove(child);
+        if (child && child.traverse) {
+          child.traverse((nested) => {
+            if (nested.isMesh) {
+              nested.geometry?.dispose?.();
+              if (Array.isArray(nested.material)) {
+                nested.material.forEach((material) => material?.dispose?.());
+              } else {
+                nested.material?.dispose?.();
+              }
             }
-          }
-        });
-        leftModelRef.current = null;
+          });
+        }
       }
-    }
+      if (modelRef.current) {
+        modelRef.current = null;
+      }
+    };
 
-    if (rightGroup) {
-      while (rightGroup.children.length > 1) {
-        const child = rightGroup.children[1];
-        rightGroup.remove(child);
-      }
-      if (rightModelRef.current) {
-        rightModelRef.current.traverse((child) => {
-          if (child.isMesh) {
-            child.geometry?.dispose?.();
-            if (Array.isArray(child.material)) {
-              child.material.forEach((material) => material?.dispose?.());
-            } else {
-              child.material?.dispose?.();
-            }
-          }
-        });
-        rightModelRef.current = null;
-      }
-    }
+    clearGroup(leftSubGroup, leftModelRef);
+    clearGroup(rightSubGroup, rightModelRef);
   }, []);
 
   const loadModelIntoGroups = useCallback((path) => {
@@ -128,7 +127,7 @@ export default function TryOnEarring({
         const size = new THREE.Vector3();
         box.getSize(size);
 
-        console.log('📦 Bounding Box Original del Modelo:', {
+        console.log('Bounding Box Original del Modelo:', {
           center: { x: center.x, y: center.y, z: center.z },
           size: { x: size.x, y: size.y, z: size.z }
         });
@@ -153,24 +152,42 @@ export default function TryOnEarring({
 
         console.log(`📏 Factor de escala calculado: ${scaleFactor} (Tamaño original en Y: ${size.y})`);
 
-        const leftSubGroup = new THREE.Group();
+        const leftSubGroup = leftSubGroupRef.current;
+        const rightSubGroup = rightSubGroupRef.current;
+        if (!leftSubGroup || !rightSubGroup) {
+          console.warn('⚠️ No se encontraron los subgrupos de arete para añadir el modelo.');
+          return;
+        }
+
+        model.position.set(-center.x, -box.max.y, -center.z);
+        model.rotation.set(0, Math.PI, 0);
+
+        model.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = false;
+            child.receiveShadow = false;
+            if (child.material) {
+              child.material.depthWrite = true;
+              child.material.depthTest = true;
+              child.material.needsUpdate = true;
+            }
+          }
+        });
+
+        const leftModel = model;
         leftSubGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
         leftSubGroup.rotation.set(0, Math.PI, 0);
         leftSubGroup.position.set(0, 0, 0);
-        leftSubGroup.add(model);
-        leftGroup.add(leftSubGroup);
+        leftSubGroup.add(leftModel);
         leftEarringGroupRef.current.visible = true;
-        leftModelRef.current = model;
-
-        const rightSubGroup = new THREE.Group();
-        rightSubGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-        rightSubGroup.rotation.set(0, Math.PI, 0);
-        rightSubGroup.position.set(0, 0, 0);
+        leftModelRef.current = leftModel;
 
         const rightModel = model.clone(true);
         rightModel.scale.x *= -1;
+        rightSubGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+        rightSubGroup.rotation.set(0, Math.PI, 0);
+        rightSubGroup.position.set(0, 0, 0);
         rightSubGroup.add(rightModel);
-        rightGroup.add(rightSubGroup);
         rightEarringGroupRef.current.visible = true;
         rightModelRef.current = rightModel;
 
@@ -195,15 +212,16 @@ export default function TryOnEarring({
           return new THREE.Mesh(geometry, material);
         };
 
-        const leftSubGroup = new THREE.Group();
-        leftSubGroup.add(createPlaceholderCube(0xc5a880));
-        leftGroup.add(leftSubGroup);
-        leftEarringGroupRef.current.visible = true;
-
-        const rightSubGroup = new THREE.Group();
-        rightSubGroup.add(createPlaceholderCube(0xc5a880));
-        rightGroup.add(rightSubGroup);
-        rightEarringGroupRef.current.visible = true;
+        const leftSubGroup = leftSubGroupRef.current;
+        const rightSubGroup = rightSubGroupRef.current;
+        if (leftSubGroup) {
+          leftSubGroup.add(createPlaceholderCube(0xc5a880));
+          leftEarringGroupRef.current.visible = true;
+        }
+        if (rightSubGroup) {
+          rightSubGroup.add(createPlaceholderCube(0xc5a880));
+          rightEarringGroupRef.current.visible = true;
+        }
       }
     );
   }, [clearModelGroups]);
@@ -257,6 +275,7 @@ export default function TryOnEarring({
     // Subgrupo para offset local del arete izquierdo
     const leftSubGroup = new THREE.Group();
     leftEarringGroup.add(leftSubGroup);
+    leftSubGroupRef.current = leftSubGroup;
 
     // Grupo para el arete derecho
     const rightEarringGroup = new THREE.Group();
@@ -267,6 +286,7 @@ export default function TryOnEarring({
     // Subgrupo para offset local del arete derecho
     const rightSubGroup = new THREE.Group();
     rightEarringGroup.add(rightSubGroup);
+    rightSubGroupRef.current = rightSubGroup;
 
     sceneRef.current = scene;
 
@@ -356,7 +376,7 @@ export default function TryOnEarring({
         };
         try {
           await videoRef.current.play();
-          console.log('🎥 Cámara iniciada correctamente');
+          console.log(' Cámara iniciada correctamente');
           syncSceneToVideo();
         } catch (playErr) {
           console.warn('⚠️ play() interrumpido:', playErr);
@@ -429,6 +449,7 @@ export default function TryOnEarring({
 
       const video = videoRef.current;
       const faceLandmarker = faceLandmarkerRef.current;
+      const currentProps = propsRef.current;
 
       if (video && video.readyState >= 2 && faceLandmarker) {
         if (video.currentTime !== lastVideoTime) {
@@ -445,10 +466,30 @@ export default function TryOnEarring({
               rightEarringGroupRef.current,
               videoWidth,
               videoHeight,
-              setFaceDetected
+              setFaceDetected,
+              currentProps.offsetX,
+              currentProps.offsetY,
+              currentProps.offsetZ,
+              currentProps.sizeOffset
             );
           }
         }
+      }
+
+      const leftSubGroup = leftSubGroupRef.current;
+      const rightSubGroup = rightSubGroupRef.current;
+      const rotationXRad = THREE.MathUtils.degToRad(currentProps.rotationX || 0);
+      const rotationYRad = THREE.MathUtils.degToRad(currentProps.rotationY || 0);
+      const rotationZRad = THREE.MathUtils.degToRad(currentProps.rotationZ || 0);
+      if (leftSubGroup) {
+        leftSubGroup.rotation.x = rotationXRad;
+        leftSubGroup.rotation.y = rotationYRad; // left positive Y
+        leftSubGroup.rotation.z = rotationZRad;
+      }
+      if (rightSubGroup) {
+        rightSubGroup.rotation.x = rotationXRad;
+        rightSubGroup.rotation.y = -rotationYRad; // right opposite Y
+        rightSubGroup.rotation.z = rotationZRad;
       }
 
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
@@ -459,6 +500,27 @@ export default function TryOnEarring({
     };
     animate();
   }, []);
+
+  const handleStartCamera = useCallback(async () => {
+    if (cameraStarted) return;
+    setError(null);
+
+    const camOk = await startCamera();
+    if (!camOk) {
+      setCameraRequested(false);
+      return;
+    }
+
+    const meshOk = await initFaceLandmarker();
+    if (!meshOk) {
+      setCameraRequested(false);
+      return;
+    }
+
+    startLoop();
+    setCameraRequested(true);
+    setCameraStarted(true);
+  }, [cameraStarted, startCamera, initFaceLandmarker, startLoop]);
 
   // ---- Actualizar textura de fondo con el feed de la cámara ----
   useEffect(() => {
@@ -489,6 +551,24 @@ export default function TryOnEarring({
     modelPathRef.current = modelPath;
   }, [modelPath]);
 
+  useEffect(() => {
+    propsRef.current = { offsetX, offsetY, offsetZ, sizeOffset, rotationX, rotationY, rotationZ };
+  }, [offsetX, offsetY, offsetZ, sizeOffset, rotationX, rotationY, rotationZ]);
+
+  useEffect(() => {
+    const applyOpacity = (group, value) => {
+      if (!group) return;
+      group.traverse((child) => {
+        if (child.isMesh && child.material) {
+          child.material.transparent = value < 100;
+          child.material.opacity = value / 100;
+        }
+      });
+    };
+    applyOpacity(leftEarringGroupRef.current, opacity);
+    applyOpacity(rightEarringGroupRef.current, opacity);
+  }, [opacity, modelLoading]);
+
   // ---- Inicialización del componente ----
   useEffect(() => {
     let mounted = true;
@@ -500,16 +580,19 @@ export default function TryOnEarring({
 
       initScene();
       loadModelIntoGroups(modelPathRef.current);
-      const camOk = await startCamera();
-      if (!camOk || !mounted) return;
 
-      // Espera pequeña antes de arrancar la red neuronal para garantizar estabilidad del stream
-      setTimeout(async () => {
-        if (!mounted) return;
-        const meshOk = await initFaceLandmarker();
-        if (!meshOk || !mounted) return;
-        startLoop();
-      }, 300);
+      if (cameraRequested) {
+        const camOk = await startCamera();
+        if (!camOk || !mounted) return;
+
+        // Espera pequeña antes de arrancar la red neuronal para garantizar estabilidad del stream
+        setTimeout(async () => {
+          if (!mounted) return;
+          const meshOk = await initFaceLandmarker();
+          if (!meshOk || !mounted) return;
+          startLoop();
+        }, 300);
+      }
     };
     init();
 
@@ -539,7 +622,7 @@ export default function TryOnEarring({
       resetSmoothing();
       console.log('🧹 Recursos del probador AR liberados');
     };
-  }, [initScene, startCamera, initFaceLandmarker, startLoop, loadModelIntoGroups]);
+  }, [initScene, loadModelIntoGroups]);
 
   // ---- Renderizado ----
   return (
@@ -575,14 +658,51 @@ export default function TryOnEarring({
             width: '100%',
             height: '100%',
             display: 'block',
-            objectFit: 'contain',
+            objectFit: 'cover',
             backgroundColor: '#000',
             borderRadius: '8px',
             transform: 'scaleX(-1)', // Espejado para vista natural del usuario
           }}
         />
       )}
-      <div style={{
+      {!cameraRequested && (
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: 12,
+          padding: 16,
+          backgroundColor: 'rgba(0, 0, 0, 0.45)',
+          color: '#fff',
+          zIndex: 20,
+          textAlign: 'center',
+        }}>
+          <button
+            type="button"
+            onClick={handleStartCamera}
+            style={{
+              padding: '12px 18px',
+              fontSize: 14,
+              fontWeight: 700,
+              borderRadius: 999,
+              border: 'none',
+              backgroundColor: '#ff7a59',
+              color: '#fff',
+              cursor: 'pointer',
+            }}
+          >
+            Iniciar cámara
+          </button>
+          <div style={{ maxWidth: 320, fontSize: 13, lineHeight: 1.5 }}>
+            Para usar la cámara en el celular debes aceptar el permiso del navegador.
+            Asegúrate de abrir la página en HTTPS o localhost para que el navegador lo considere seguro.
+          </div>
+        </div>
+      )}
+      <div className="try-on-status-container" style={{
         position: 'absolute', top: 10, left: 10,
         display: 'flex', gap: 8, flexDirection: 'column',
         pointerEvents: 'none', zIndex: 10,

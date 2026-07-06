@@ -80,11 +80,11 @@
 }
 
 .social-icon:hover {
-  background-color: var(--primary-gold);
-  color: #121212;
-  border-color: var(--primary-gold);
+  background-color: var(--logo-purple);
+  color: #FFFFFF;
+  border-color: var(--logo-purple);
   transform: translateY(-3px);
-  box-shadow: 0 4px 12px rgba(197, 168, 128, 0.3);
+  box-shadow: 0 4px 12px rgba(108, 79, 162, 0.28);
 }
 
 .footer-heading {
@@ -112,7 +112,7 @@
 }
 
 .footer-list a:hover {
-  color: var(--primary-gold);
+  color: var(--logo-purple);
   padding-left: 4px;
 }
 
@@ -123,7 +123,7 @@
 .contact-label {
   display: block;
   font-size: 0.75rem;
-  color: var(--primary-gold);
+  color: var(--logo-purple);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   margin-bottom: 0.2rem;
@@ -167,7 +167,7 @@
 }
 
 .footer-legal a:hover {
-  color: var(--primary-gold);
+  color: var(--logo-purple);
 }
 
 .copyright {

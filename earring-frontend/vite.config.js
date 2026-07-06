@@ -5,4 +5,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: '/Prueba-despliegue-taos/',
+  server: {
+    allowedHosts: [
+      'rush-ashy-chemicals.ngrok-free.dev'
+    ]
+  }
 })
+
