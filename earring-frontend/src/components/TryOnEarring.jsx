@@ -339,12 +339,17 @@ export default function TryOnEarring({
     if (!cW || !cH) return;
 
     // Dimensiones efectivas del video visible (con object-fit:cover)
-    const { w: effectiveW, h: effectiveH } = getEffectiveSize(canvas, video);
+    // Solo necesitamos calcular esto para pasárselo a MediaPipe
+    // const { w: effectiveW, h: effectiveH } = getEffectiveSize(canvas, video); // Se usa en animate
 
-    const frustumHalfH = effectiveH / 2;
-    const frustumHalfW = effectiveW / 2;
-    camera.left = -frustumHalfW;
-    camera.right = frustumHalfW;
+    // El frustum debe coincidir con el tamaño real del canvas (sin recortes)
+    // para que la proporción (aspect ratio) de Three.js no se deforme (squish).
+    // Las coordenadas de MediaPipe (effectiveW/H) luego sobresaldrán de este frustum
+    // replicando exactamente el recorte (crop) que hace object-fit: cover.
+    const aspect = cW / cH;
+    const frustumHalfH = cH / 2;
+    camera.left = -frustumHalfH * aspect;
+    camera.right = frustumHalfH * aspect;
     camera.top = frustumHalfH;
     camera.bottom = -frustumHalfH;
     camera.updateProjectionMatrix();
@@ -464,6 +469,8 @@ export default function TryOnEarring({
 
           if (result) {
             const canvas = canvasRef.current;
+            const cW = canvas ? canvas.clientWidth : VIDEO_WIDTH;
+            const cH = canvas ? canvas.clientHeight : VIDEO_HEIGHT;
             const { w: effectiveW, h: effectiveH } = getEffectiveSize(canvas, video);
 
             // Sincronizar frustum si el contenedor cambió de tamaño
@@ -471,7 +478,7 @@ export default function TryOnEarring({
               const cam = cameraRef.current;
               const frustumW = cam.right - cam.left;
               const frustumH = cam.top - cam.bottom;
-              if (Math.abs(frustumW - effectiveW) > 1 || Math.abs(frustumH - effectiveH) > 1) {
+              if (Math.abs(frustumW - cW) > 1 || Math.abs(frustumH - cH) > 1) {
                 syncSceneToVideo();
               }
             }
