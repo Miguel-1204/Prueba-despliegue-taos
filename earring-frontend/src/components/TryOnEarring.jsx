@@ -304,29 +304,54 @@ export default function TryOnEarring({
     sceneRef.current = scene;
   }, []);
 
+  /**
+   * Calcula las dimensiones "efectivas" del video en pantalla, teniendo en cuenta
+   * que el CSS usa object-fit: cover para recortar el video.
+   */
+  const getEffectiveSize = useCallback((canvasEl, videoEl) => {
+    const cW = canvasEl.clientWidth;
+    const cH = canvasEl.clientHeight;
+    if (!videoEl || !videoEl.videoWidth || !videoEl.videoHeight || !cW || !cH) {
+      return { w: cW || VIDEO_WIDTH, h: cH || VIDEO_HEIGHT };
+    }
+    const videoAspect = videoEl.videoWidth / videoEl.videoHeight;
+    const containerAspect = cW / cH;
+
+    if (videoAspect > containerAspect) {
+      // Video más ancho que el contenedor: llena la altura, recorta lados
+      return { w: cH * videoAspect, h: cH };
+    } else {
+      // Video más alto que el contenedor: llena el ancho, recorta arriba/abajo
+      return { w: cW, h: cW / videoAspect };
+    }
+  }, []);
+
   const syncSceneToVideo = useCallback(() => {
     const canvas = canvasRef.current;
+    const video = videoRef.current;
     const renderer = rendererRef.current;
     const camera = cameraRef.current;
 
-    if (!canvas || !renderer || !camera) return;
+    if (!canvas || !video || !renderer || !camera) return;
 
     const cW = canvas.clientWidth;
     const cH = canvas.clientHeight;
     if (!cW || !cH) return;
 
-    // El contenedor ahora es 16:9, igual que la cámara → no hay recorte
-    const aspect = cW / cH;
-    const frustumHalf = cH / 2;
-    camera.left = -frustumHalf * aspect;
-    camera.right = frustumHalf * aspect;
-    camera.top = frustumHalf;
-    camera.bottom = -frustumHalf;
+    // Dimensiones efectivas del video visible (con object-fit:cover)
+    const { w: effectiveW, h: effectiveH } = getEffectiveSize(canvas, video);
+
+    const frustumHalfH = effectiveH / 2;
+    const frustumHalfW = effectiveW / 2;
+    camera.left = -frustumHalfW;
+    camera.right = frustumHalfW;
+    camera.top = frustumHalfH;
+    camera.bottom = -frustumHalfH;
     camera.updateProjectionMatrix();
 
     renderer.setSize(cW, cH, false);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  }, []);
+  }, [getEffectiveSize]);
 
   // ---- Inicializar cámara ----
   const startCamera = useCallback(async () => {
@@ -439,16 +464,14 @@ export default function TryOnEarring({
 
           if (result) {
             const canvas = canvasRef.current;
-            // Con contenedor 16:9 e cámara 16:9, no hay recorte: usar dims del canvas directamente
-            const displayWidth = canvas ? canvas.clientWidth : VIDEO_WIDTH;
-            const displayHeight = canvas ? canvas.clientHeight : VIDEO_HEIGHT;
+            const { w: effectiveW, h: effectiveH } = getEffectiveSize(canvas, video);
 
             // Sincronizar frustum si el contenedor cambió de tamaño
             if (cameraRef.current) {
               const cam = cameraRef.current;
               const frustumW = cam.right - cam.left;
               const frustumH = cam.top - cam.bottom;
-              if (Math.abs(frustumW - displayWidth) > 1 || Math.abs(frustumH - displayHeight) > 1) {
+              if (Math.abs(frustumW - effectiveW) > 1 || Math.abs(frustumH - effectiveH) > 1) {
                 syncSceneToVideo();
               }
             }
@@ -457,8 +480,8 @@ export default function TryOnEarring({
               result,
               leftEarringGroupRef.current,
               rightEarringGroupRef.current,
-              displayWidth,
-              displayHeight,
+              effectiveW,
+              effectiveH,
               setFaceDetected,
               currentProps.offsetX,
               currentProps.offsetY,
