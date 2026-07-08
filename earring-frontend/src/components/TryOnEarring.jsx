@@ -39,6 +39,13 @@ const isMobile = () => /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent
  */
 const DETECTION_INTERVAL_MS = isMobile() ? 50 : 16;
 
+/**
+ * Intervalo adaptativo máximo (ms). Si la IA tarda más de este valor en un frame,
+ * el sistema automáticamente añade ese tiempo extra al siguiente intervalo.
+ * Evita que dispositivos muy lentos bloqueen el hilo principal.
+ */
+const MAX_ADAPTIVE_INTERVAL_MS = isMobile() ? 200 : 50;
+
 // Ya no usamos FACEMESH_OPTIONS, se configura en initFaceLandmarker
 
 // Nota: Los desplazamientos de tracking y offsets locales de los aretes
@@ -81,6 +88,18 @@ export default function TryOnEarring({
   const latestDetectionResultRef = useRef(null);
   /** Timestamp de la última llamada a detectForVideo */
   const lastDetectionTimeRef = useRef(0);
+  /**
+   * Indica si el stream de la cámara necesita rotación CSS de 90°.
+   * Ocurre cuando el sensor de la cámara frontal de Android entrega pixeles
+   * en landscape (ancho > alto) mientras el teléfono está en portrait.
+   * En ese caso aplicamos rotate(-90deg) via CSS para corregirlo visualmente.
+   */
+  const videoNeedsRotationRef = useRef(false);
+  const [videoTransform, setVideoTransform] = useState('scaleX(-1)');
+  /** Intervalo de detección adaptativo en ms (se ajusta según rendimiento real) */
+  const adaptiveIntervalRef = useRef(DETECTION_INTERVAL_MS);
+  /** Ref para pausar la detección cuando la pestaña está oculta */
+  const pageVisibleRef = useRef(true);
 
   // ---- Estado ----
   const [cameraReady, setCameraReady] = useState(false);
@@ -383,29 +402,33 @@ export default function TryOnEarring({
       const isPortrait = window.screen.height > window.screen.width;
       const mobile = isMobile();
 
-      // Resoluciones adaptativas:
-      // - Escritorio: 1280×720 (HD, amplio campo de visión sin zoom)
-      // - Móvil: 480×640 (retrato) / 640×480 (paisaje)
-      //   Reducir la resolución de captura en móvil tiene dos beneficios:
-      //   1. Menos píxeles = menos tiempo de procesamiento en la IA (~3-4x más rápido)
-      //   2. El driver de la cámara usa el sensor completo en lugar de hacer
-      //      un digital crop, evitando el "zoom falso" que reportaba el usuario.
+      // Estrategia de resolución para móvil:
+      // Los sensores de cámara frontal en Android son físicamente landscape.
+      // Solicitar width < height puede causar que el driver entregue el stream
+      // rotado incorrectamente (el bug de la imagen horizontal).
+      //
+      // Solución: SIEMPRE solicitar en formato landscape (width > height) en móvil,
+      // y luego detectar si necesita rotación CSS después de cargar el stream.
+      // Esto garantiza que el driver use el sensor nativo sin recorte digital.
       let idealWidth, idealHeight;
       if (mobile) {
-        idealWidth  = isPortrait ? 480 : 640;
-        idealHeight = isPortrait ? 640 : 480;
+        // En móvil siempre pedimos landscape nativo del sensor
+        // Si el dispositivo está en portrait, el stream llegará "de lado"
+        // y lo corregimos con CSS rotate() después de detectarlo.
+        idealWidth  = 640;
+        idealHeight = 480;
       } else {
         idealWidth  = isPortrait ? 720 : 1280;
         idealHeight = isPortrait ? 1280 : 720;
       }
 
-      console.log(`📷 Resolución de cámara solicitada: ${idealWidth}×${idealHeight} (mobile: ${mobile})`);
+      console.log(`📷 Resolución solicitada: ${idealWidth}×${idealHeight} (mobile: ${mobile}, portrait: ${isPortrait})`);
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'user',
-          width:  { ideal: idealWidth },
-          height: { ideal: idealHeight },
+          width:  { ideal: idealWidth, max: mobile ? 1280 : 1920 },
+          height: { ideal: idealHeight, max: mobile ? 720 : 1080 },
         },
         audio: false,
       });
@@ -417,11 +440,35 @@ export default function TryOnEarring({
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         videoRef.current.onloadedmetadata = () => {
+          const vid = videoRef.current;
+          if (!vid) return;
+
+          const streamW = vid.videoWidth;
+          const streamH = vid.videoHeight;
+          const deviceIsPortrait = window.screen.height > window.screen.width;
+
+          // Detectar si el stream está en landscape pero el dispositivo en portrait:
+          // Esto indica que el driver entregó pixeles sin rotar y necesitamos
+          // compensar visualmente con CSS transform.
+          const streamIsLandscape = streamW > streamH;
+          const needsRotation = mobile && deviceIsPortrait && streamIsLandscape;
+          videoNeedsRotationRef.current = needsRotation;
+
+          if (needsRotation) {
+            console.log(`🔄 Stream landscape (${streamW}×${streamH}) en dispositivo portrait → aplicando rotate(-90deg)`);
+            // scaleX(-1) = espejo horizontal (efecto cámara frontal)
+            // rotate(-90deg) = corrige la orientación del stream
+            setVideoTransform('scaleX(-1) rotate(-90deg)');
+          } else {
+            console.log(`✅ Stream (${streamW}×${streamH}) orientación correcta, sin rotación CSS necesaria`);
+            setVideoTransform('scaleX(-1)');
+          }
+
           syncSceneToVideo();
         };
         try {
           await videoRef.current.play();
-          console.log(' Cámara iniciada correctamente');
+          console.log('✅ Cámara iniciada correctamente');
           syncSceneToVideo();
         } catch (playErr) {
           console.warn('⚠️ play() interrumpido:', playErr);
@@ -455,31 +502,43 @@ export default function TryOnEarring({
 
   // ---- Inicializar MediaPipe FaceLandmarker ----
   const initFaceLandmarker = useCallback(async () => {
-    try {
-      console.log('📦 Cargando MediaPipe FaceLandmarker...');
+    const tryCreate = async (delegate) => {
+      console.log(`📦 Cargando MediaPipe FaceLandmarker (delegate: ${delegate})...`);
       const vision = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
       );
-
-      const faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+      return FaceLandmarker.createFromOptions(vision, {
         baseOptions: {
           modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-          delegate: 'GPU'
+          delegate,
         },
         runningMode: 'VIDEO',
         numFaces: 1,
         outputFaceBlendshapes: false,
         outputFacialTransformationMatrixes: true,
       });
+    };
 
+    try {
+      // Intentar con GPU primero (más rápido cuando está disponible)
+      const faceLandmarker = await tryCreate('GPU');
       faceLandmarkerRef.current = faceLandmarker;
-
-      console.log('✅ MediaPipe FaceLandmarker inicializado correctamente');
+      console.log('✅ FaceLandmarker iniciado con GPU delegate');
       return true;
-    } catch (err) {
-      console.error('❌ Error inicializando FaceLandmarker:', err);
-      setError('Error al inicializar la detección facial. Verifica tu conexión a internet.');
-      return false;
+    } catch (gpuErr) {
+      console.warn('⚠️ GPU delegate falló, intentando con CPU delegate...', gpuErr.message);
+      try {
+        // Fallback a CPU — más lento pero más compatible en dispositivos de gama baja
+        // o navegadores sin soporte WebGPU/WebGL2 adecuado.
+        const faceLandmarker = await tryCreate('CPU');
+        faceLandmarkerRef.current = faceLandmarker;
+        console.log('✅ FaceLandmarker iniciado con CPU delegate (modo compatibilidad)');
+        return true;
+      } catch (cpuErr) {
+        console.error('❌ Error inicializando FaceLandmarker:', cpuErr);
+        setError('Error al inicializar la detección facial. Verifica tu conexión a internet.');
+        return false;
+      }
     }
   }, []);
 
@@ -488,19 +547,29 @@ export default function TryOnEarring({
     if (animationIdRef.current) return;
     isRunningRef.current = true;
 
-    // ── Bucle de detección IA (throttled) ────────────────────────────────────
-    // Corre independientemente del bucle de renderizado.
-    // Se limita a DETECTION_INTERVAL_MS para reducir carga en gama baja.
-    //
-    // Por qué separar detección de renderizado:
-    //   - requestAnimationFrame se dispara a 60fps (16ms), pero detectForVideo
-    //     en un Helio G80 puede tardar 40-80ms, bloqueando el hilo principal.
-    //   - Al limitar la detección con un intervalo, la IA llama cada ~50ms (20fps)
-    //     mientras Three.js renderiza con el último resultado a 60fps.
-    //   - El suavizado (smoothing) en faceTrackingUtils.js se encarga de que
-    //     los aretes se vean fluidos incluso entre frames de detección.
+    // ── Page Visibility API: pausar detección IA cuando la pestaña está oculta ────
+    // Esto ahorra CPU/GPU significativamente en dispositivos móviles cuando el usuario
+    // cambia de pestaña o bloquea la pantalla.
+    const handleVisibilityChange = () => {
+      pageVisibleRef.current = document.visibilityState === 'visible';
+      console.log(`📱 Página ${pageVisibleRef.current ? 'visible' : 'oculta'} → detección ${pageVisibleRef.current ? 'reanudada' : 'pausada'}`);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // ── Bucle de detección IA (throttled + adaptativo) ──────────────────────────
+    // Intervalo adaptativo: mide el tiempo real de cada llamada y ajusta el siguiente
+    // intervalo para evitar bloquear el hilo principal en dispositivos lentos.
     const runDetection = async () => {
-      if (!isRunningRef.current) return;
+      if (!isRunningRef.current) {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        return;
+      }
+
+      // Saltear detección si la pestaña está oculta (ahorra batería y CPU)
+      if (!pageVisibleRef.current) {
+        setTimeout(runDetection, 250);
+        return;
+      }
 
       const now = performance.now();
       const timeSinceLast = now - lastDetectionTimeRef.current;
@@ -512,9 +581,10 @@ export default function TryOnEarring({
         video &&
         video.readyState >= 2 &&
         faceLandmarker &&
-        timeSinceLast >= DETECTION_INTERVAL_MS
+        timeSinceLast >= adaptiveIntervalRef.current
       ) {
         lastDetectionTimeRef.current = now;
+        const detectionStart = performance.now();
 
         try {
           const result = faceLandmarker.detectForVideo(video, now);
@@ -534,7 +604,6 @@ export default function TryOnEarring({
               }
             }
 
-            // Aplicar resultado directamente (incluye suavizado temporal)
             onFaceLandmarkerResults(
               result,
               leftEarringGroupRef.current,
@@ -551,20 +620,34 @@ export default function TryOnEarring({
         } catch (err) {
           console.warn('⚠️ Error en detección facial:', err);
         }
+
+        // Intervalo adaptativo: si la detección tardó más del intervalo base,
+        // ampliar el próximo intervalo para dejar respirar al hilo principal.
+        const detectionMs = performance.now() - detectionStart;
+        if (detectionMs > DETECTION_INTERVAL_MS) {
+          adaptiveIntervalRef.current = Math.min(
+            detectionMs * 1.2,  // añadir 20% de margen
+            MAX_ADAPTIVE_INTERVAL_MS
+          );
+        } else {
+          // Recuperar intervalo base si el rendimiento mejora
+          adaptiveIntervalRef.current = Math.max(
+            DETECTION_INTERVAL_MS,
+            adaptiveIntervalRef.current * 0.95  // reducir gradualmente
+          );
+        }
       }
 
-      // Reprogramar el siguiente ciclo de detección
       if (isRunningRef.current) {
-        setTimeout(runDetection, DETECTION_INTERVAL_MS);
+        setTimeout(runDetection, adaptiveIntervalRef.current);
+      } else {
+        document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
     };
 
-    // Iniciar el bucle de detección
     runDetection();
 
-    // ── Bucle de renderizado (60fps) ─────────────────────────────────────────
-    // Solo actualiza rotaciones de los subgrupos y renderiza la escena Three.js.
-    // Opera a 60fps independientemente de la velocidad de la IA.
+    // ── Bucle de renderizado (60fps) ──────────────────────────────────────────
     const animate = () => {
       if (!isRunningRef.current) return;
 
@@ -706,6 +789,9 @@ export default function TryOnEarring({
       {/* 
         El video es el fondo de la cámara. visibility:hidden en vez de display:none
         para que el navegador no detenga el stream mientras la IA lo procesa.
+        videoTransform incluye:
+          - scaleX(-1): efecto espejo (cámara frontal)
+          - rotate(-90deg): corrección cuando el driver Android entrega landscape en portrait
       */}
       <video
         ref={videoRef}
@@ -718,7 +804,7 @@ export default function TryOnEarring({
           width: '100%',
           height: '100%',
           objectFit: 'cover',
-          transform: 'scaleX(-1)',
+          transform: videoTransform,
           borderRadius: '8px',
           visibility: cameraStarted ? 'visible' : 'hidden',
         }}
@@ -733,7 +819,7 @@ export default function TryOnEarring({
           height: '100%',
           display: 'block',
           pointerEvents: 'none',
-          transform: 'scaleX(-1)',
+          transform: 'scaleX(-1)',  // el canvas Three.js siempre se espeja (no necesita rotate)
           opacity: cameraStarted ? 1 : 0,
         }}
       />
