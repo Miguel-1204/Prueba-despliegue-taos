@@ -22,12 +22,22 @@ import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
 // Constantes de configuración
 // -----------------------------------------------------------------------
 
-/** Resolución del video de la cámara (baja para rendimiento) */
-const VIDEO_WIDTH = 960;
-const VIDEO_HEIGHT = 720;
-
 /** Distancia de la cámara ortográfica al plano Z = 0 */
 const CAMERA_DISTANCE = 900;
+
+/**
+ * Detecta si el usuario está en un dispositivo móvil.
+ * Esto permite aplicar configuraciones de rendimiento diferenciadas.
+ */
+const isMobile = () => /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+/**
+ * Intervalo mínimo entre llamadas a detectForVideo (en ms).
+ * 16ms = ~60fps (sin throttling), 50ms = ~20fps (bajo consumo en móvil).
+ * Móviles de gama baja se benefician enormemente de reducir esta frecuencia,
+ * ya que cada llamada de la IA puede tardar 30-80ms en esos dispositivos.
+ */
+const DETECTION_INTERVAL_MS = isMobile() ? 50 : 16;
 
 // Ya no usamos FACEMESH_OPTIONS, se configura en initFaceLandmarker
 
@@ -67,6 +77,10 @@ export default function TryOnEarring({
   const isRunningRef = useRef(false);
   const modelPathRef = useRef(modelPath);
   const propsRef = useRef({ offsetX: 0, offsetY: 0, offsetZ: 0, sizeOffset: 0, rotationX: 0, rotationY: 0, rotationZ: 0 });
+  /** Almacena el último resultado de la IA para desacoplar tracking de renderizado */
+  const latestDetectionResultRef = useRef(null);
+  /** Timestamp de la última llamada a detectForVideo */
+  const lastDetectionTimeRef = useRef(0);
 
   // ---- Estado ----
   const [cameraReady, setCameraReady] = useState(false);
@@ -249,8 +263,12 @@ export default function TryOnEarring({
       setError('Tu navegador no soporta WebGL. Prueba con Chrome o Edge.');
       return;
     }
-    renderer.setSize(canvas.clientWidth || VIDEO_WIDTH, canvas.clientHeight || VIDEO_HEIGHT);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // En móviles de gama baja, limitamos el pixelRatio a 1.5 para reducir la carga
+    // en la GPU. Esto reduce el número de fragmentos a rasterizar sin afectar
+    // la fluidez del tracking (que va por separado).
+    const maxPixelRatio = isMobile() ? 1.5 : 2;
+    renderer.setSize(canvas.clientWidth || 640, canvas.clientHeight || 480);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     rendererRef.current = renderer;
 
     // Cámara Ortográfica — usa dimensiones CSS del canvas (lo que el usuario ve)
@@ -355,21 +373,38 @@ export default function TryOnEarring({
     camera.updateProjectionMatrix();
 
     renderer.setSize(cW, cH, false);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const maxPixelRatio = isMobile() ? 1.5 : 2;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
   }, [getEffectiveSize]);
 
   // ---- Inicializar cámara ----
   const startCamera = useCallback(async () => {
     try {
-      // Usamos window.screen para evitar que abrir la consola en un lateral confunda la detección
       const isPortrait = window.screen.height > window.screen.width;
-      const idealWidth = isPortrait ? 720 : 1280;
-      const idealHeight = isPortrait ? 1280 : 720;
+      const mobile = isMobile();
+
+      // Resoluciones adaptativas:
+      // - Escritorio: 1280×720 (HD, amplio campo de visión sin zoom)
+      // - Móvil: 480×640 (retrato) / 640×480 (paisaje)
+      //   Reducir la resolución de captura en móvil tiene dos beneficios:
+      //   1. Menos píxeles = menos tiempo de procesamiento en la IA (~3-4x más rápido)
+      //   2. El driver de la cámara usa el sensor completo en lugar de hacer
+      //      un digital crop, evitando el "zoom falso" que reportaba el usuario.
+      let idealWidth, idealHeight;
+      if (mobile) {
+        idealWidth  = isPortrait ? 480 : 640;
+        idealHeight = isPortrait ? 640 : 480;
+      } else {
+        idealWidth  = isPortrait ? 720 : 1280;
+        idealHeight = isPortrait ? 1280 : 720;
+      }
+
+      console.log(`📷 Resolución de cámara solicitada: ${idealWidth}×${idealHeight} (mobile: ${mobile})`);
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'user',
-          width: { ideal: idealWidth },
+          width:  { ideal: idealWidth },
           height: { ideal: idealHeight },
         },
         audio: false,
@@ -452,25 +487,41 @@ export default function TryOnEarring({
   const startLoop = useCallback(() => {
     if (animationIdRef.current) return;
     isRunningRef.current = true;
-    let lastVideoTime = -1;
 
-    const animate = () => {
+    // ── Bucle de detección IA (throttled) ────────────────────────────────────
+    // Corre independientemente del bucle de renderizado.
+    // Se limita a DETECTION_INTERVAL_MS para reducir carga en gama baja.
+    //
+    // Por qué separar detección de renderizado:
+    //   - requestAnimationFrame se dispara a 60fps (16ms), pero detectForVideo
+    //     en un Helio G80 puede tardar 40-80ms, bloqueando el hilo principal.
+    //   - Al limitar la detección con un intervalo, la IA llama cada ~50ms (20fps)
+    //     mientras Three.js renderiza con el último resultado a 60fps.
+    //   - El suavizado (smoothing) en faceTrackingUtils.js se encarga de que
+    //     los aretes se vean fluidos incluso entre frames de detección.
+    const runDetection = async () => {
       if (!isRunningRef.current) return;
+
+      const now = performance.now();
+      const timeSinceLast = now - lastDetectionTimeRef.current;
 
       const video = videoRef.current;
       const faceLandmarker = faceLandmarkerRef.current;
-      const currentProps = propsRef.current;
 
-      if (video && video.readyState >= 2 && faceLandmarker) {
-        if (video.currentTime !== lastVideoTime) {
-          lastVideoTime = video.currentTime;
+      if (
+        video &&
+        video.readyState >= 2 &&
+        faceLandmarker &&
+        timeSinceLast >= DETECTION_INTERVAL_MS
+      ) {
+        lastDetectionTimeRef.current = now;
 
-          const result = faceLandmarker.detectForVideo(video, performance.now());
-
+        try {
+          const result = faceLandmarker.detectForVideo(video, now);
           if (result) {
             const canvas = canvasRef.current;
-            const cW = canvas ? canvas.clientWidth : VIDEO_WIDTH;
-            const cH = canvas ? canvas.clientHeight : VIDEO_HEIGHT;
+            const cW = canvas ? canvas.clientWidth : 640;
+            const cH = canvas ? canvas.clientHeight : 480;
             const { w: effectiveW, h: effectiveH } = getEffectiveSize(canvas, video);
 
             // Sincronizar frustum si el contenedor cambió de tamaño
@@ -483,6 +534,7 @@ export default function TryOnEarring({
               }
             }
 
+            // Aplicar resultado directamente (incluye suavizado temporal)
             onFaceLandmarkerResults(
               result,
               leftEarringGroupRef.current,
@@ -490,15 +542,33 @@ export default function TryOnEarring({
               effectiveW,
               effectiveH,
               setFaceDetected,
-              currentProps.offsetX,
-              currentProps.offsetY,
-              currentProps.offsetZ,
-              currentProps.sizeOffset
+              propsRef.current.offsetX,
+              propsRef.current.offsetY,
+              propsRef.current.offsetZ,
+              propsRef.current.sizeOffset
             );
           }
+        } catch (err) {
+          console.warn('⚠️ Error en detección facial:', err);
         }
       }
 
+      // Reprogramar el siguiente ciclo de detección
+      if (isRunningRef.current) {
+        setTimeout(runDetection, DETECTION_INTERVAL_MS);
+      }
+    };
+
+    // Iniciar el bucle de detección
+    runDetection();
+
+    // ── Bucle de renderizado (60fps) ─────────────────────────────────────────
+    // Solo actualiza rotaciones de los subgrupos y renderiza la escena Three.js.
+    // Opera a 60fps independientemente de la velocidad de la IA.
+    const animate = () => {
+      if (!isRunningRef.current) return;
+
+      const currentProps = propsRef.current;
       const leftSubGroup = leftSubGroupRef.current;
       const rightSubGroup = rightSubGroupRef.current;
       const rotationXRad = THREE.MathUtils.degToRad(currentProps.rotationX || 0);
@@ -506,12 +576,12 @@ export default function TryOnEarring({
       const rotationZRad = THREE.MathUtils.degToRad(currentProps.rotationZ || 0);
       if (leftSubGroup) {
         leftSubGroup.rotation.x = rotationXRad;
-        leftSubGroup.rotation.y = rotationYRad; // left positive Y
+        leftSubGroup.rotation.y = rotationYRad;
         leftSubGroup.rotation.z = rotationZRad;
       }
       if (rightSubGroup) {
         rightSubGroup.rotation.x = rotationXRad;
-        rightSubGroup.rotation.y = -rotationYRad; // right opposite Y
+        rightSubGroup.rotation.y = -rotationYRad;
         rightSubGroup.rotation.z = rotationZRad;
       }
 
@@ -522,7 +592,7 @@ export default function TryOnEarring({
       animationIdRef.current = requestAnimationFrame(animate);
     };
     animate();
-  }, []);
+  }, [getEffectiveSize, syncSceneToVideo]);
 
   const handleStartCamera = useCallback(async () => {
     if (cameraStarted) return;
