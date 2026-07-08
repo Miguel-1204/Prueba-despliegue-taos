@@ -699,8 +699,7 @@ export default function TryOnEarring({
             Iniciar cámara
           </button>
           <div style={{ maxWidth: 320, fontSize: 13, lineHeight: 1.5 }}>
-            Para usar la cámara en el celular debes aceptar el permiso del navegador.
-            Asegúrate de abrir la página en HTTPS o localhost para que el navegador lo considere seguro.
+            Para usar la cámara en el dispositivo debes aceptar el permiso del navegador.
           </div>
         </div>
       )}
