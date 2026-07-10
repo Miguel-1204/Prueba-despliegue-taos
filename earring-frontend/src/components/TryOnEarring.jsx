@@ -5,7 +5,7 @@
  * Carga MediaPipe FaceMesh de forma local y calcula la posición y rotación
  * de los aretes utilizando las utilidades de tracking actualizadas.
  *
- * Renderiza con Three.js: OrthographicCamera, VideoTexture, GLTFLoader.
+ * Renderiza con Three.js: OrthographicCamera, GLTFLoader y DRACOLoader.
  * Soporta dos aretes independientes (oreja izquierda y derecha).
  *
  * Modo de uso:
@@ -71,16 +71,15 @@ const glbCache = new Map();
  * Evita el overhead de instanciar el loader en cada cambio de modelo.
  */
 let sharedLoader = null;
-let sharedDracoLoader = null;
 const getLoader = () => {
   if (!sharedLoader) {
-    sharedDracoLoader = new DRACOLoader();
-    sharedDracoLoader.setDecoderPath(`${import.meta.env.BASE_URL}draco/gltf/`);
-    sharedDracoLoader.setDecoderConfig({ type: 'wasm' });
-    sharedDracoLoader.setWorkerLimit(isMobile() ? 1 : 2);
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath(`${import.meta.env.BASE_URL}draco/gltf/`);
+    dracoLoader.setDecoderConfig({ type: 'wasm' });
+    dracoLoader.setWorkerLimit(isMobile() ? 1 : 2);
 
     sharedLoader = new GLTFLoader();
-    sharedLoader.setDRACOLoader(sharedDracoLoader);
+    sharedLoader.setDRACOLoader(dracoLoader);
   }
   return sharedLoader;
 };
@@ -297,7 +296,7 @@ export default function TryOnEarring({
     // en la GPU. Esto reduce el número de fragmentos a rasterizar sin afectar
     // la fluidez del tracking (que va por separado).
     const maxPixelRatio = isMobile() ? 1.5 : 2;
-    renderer.setSize(canvas.clientWidth || 640, canvas.clientHeight || 480);
+    renderer.setSize(canvas.clientWidth || VIDEO_WIDTH, canvas.clientHeight || VIDEO_HEIGHT);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     rendererRef.current = renderer;
 
@@ -386,10 +385,6 @@ export default function TryOnEarring({
     const cH = canvas.clientHeight;
     if (!cW || !cH) return;
 
-    // Dimensiones efectivas del video visible (con object-fit:cover)
-    // Solo necesitamos calcular esto para pasárselo a MediaPipe
-    // const { w: effectiveW, h: effectiveH } = getEffectiveSize(canvas, video); // Se usa en animate
-
     // El frustum debe coincidir con el tamaño real del canvas (sin recortes)
     // para que la proporción (aspect ratio) de Three.js no se deforme (squish).
     // Las coordenadas de MediaPipe (effectiveW/H) luego sobresaldrán de este frustum
@@ -405,7 +400,7 @@ export default function TryOnEarring({
     renderer.setSize(cW, cH, false);
     const maxPixelRatio = isMobile() ? 1.5 : 2;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
-  }, [getEffectiveSize]);
+  }, []);
 
   // ---- Inicializar cámara ----
   const startCamera = useCallback(async () => {
@@ -595,8 +590,8 @@ export default function TryOnEarring({
           const result = faceLandmarker.detectForVideo(video, now);
           if (result) {
             const canvas = canvasRef.current;
-            const cW = canvas ? canvas.clientWidth : 640;
-            const cH = canvas ? canvas.clientHeight : 480;
+            const cW = canvas ? canvas.clientWidth : VIDEO_WIDTH;
+            const cH = canvas ? canvas.clientHeight : VIDEO_HEIGHT;
             const { w: effectiveW, h: effectiveH } = getEffectiveSize(canvas, video);
 
             // Sincronizar frustum si el contenedor cambió de tamaño
@@ -718,10 +713,6 @@ export default function TryOnEarring({
   useEffect(() => {
     propsRef.current = { offsetX, offsetY, offsetZ, sizeOffset, rotationX, rotationY, rotationZ };
   }, [offsetX, offsetY, offsetZ, sizeOffset, rotationX, rotationY, rotationZ]);
-
-  // Nota: el efecto de opacidad fue eliminado porque el prop `opacity`
-  // ya no se usa desde Simulator.jsx. Los modelos siempre se muestran
-  // a opacidad completa (valor por defecto: 100).
 
   // ---- Inicialización del componente ----
   useEffect(() => {

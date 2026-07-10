@@ -13,10 +13,10 @@ export default function Simulator() {
     ? productsWith3D.find((p) => p.id === productParam) || productsWith3D[0]
     : productsWith3D[0];
 
-  const [earringSizeOffset, setEarringSizeOffset] = useState(0);
+  const [earringSizeOffset, setEarringSizeOffset] = useState(20);
   const [earringOffsetX, setEarringOffsetX] = useState(0);
   const [earringOffsetY, setEarringOffsetY] = useState(0);
-  const [earringRotationY, setEarringRotationY] = useState(0);
+  const [earringRotationY, setEarringRotationY] = useState(-40);
   const [showMobileSettings, setShowMobileSettings] = useState(false);
 
   const handleProductChange = (prod) => {
@@ -26,10 +26,10 @@ export default function Simulator() {
   };
 
   const resetSettings = () => {
-    setEarringSizeOffset(0);
+    setEarringSizeOffset(20);
     setEarringOffsetX(0);
     setEarringOffsetY(0);
-    setEarringRotationY(0);
+    setEarringRotationY(-40);
   };
 
   return (
@@ -44,7 +44,6 @@ export default function Simulator() {
           <div className="simulator-viewport ar-viewport">
             <TryOnEarring
               modelPath={selectedProduct.glbPath}
-              showCanvas={true}
               sizeOffset={earringSizeOffset}
               offsetX={earringOffsetX}
               offsetY={earringOffsetY}
