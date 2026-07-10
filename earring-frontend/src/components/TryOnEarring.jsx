@@ -14,6 +14,7 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
 import * as THREE from 'three';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { onFaceLandmarkerResults, resetSmoothing } from '../utils/faceTrackingUtils';
 import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
@@ -24,6 +25,8 @@ import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
 
 /** Distancia de la cámara ortográfica al plano Z = 0 */
 const CAMERA_DISTANCE = 900;
+const VIDEO_WIDTH = 640;
+const VIDEO_HEIGHT = 480;
 
 /**
  * Detecta si el usuario está en un dispositivo móvil.
@@ -68,8 +71,17 @@ const glbCache = new Map();
  * Evita el overhead de instanciar el loader en cada cambio de modelo.
  */
 let sharedLoader = null;
+let sharedDracoLoader = null;
 const getLoader = () => {
-  if (!sharedLoader) sharedLoader = new GLTFLoader();
+  if (!sharedLoader) {
+    sharedDracoLoader = new DRACOLoader();
+    sharedDracoLoader.setDecoderPath(`${import.meta.env.BASE_URL}draco/gltf/`);
+    sharedDracoLoader.setDecoderConfig({ type: 'wasm' });
+    sharedDracoLoader.setWorkerLimit(isMobile() ? 1 : 2);
+
+    sharedLoader = new GLTFLoader();
+    sharedLoader.setDRACOLoader(sharedDracoLoader);
+  }
   return sharedLoader;
 };
 
@@ -81,7 +93,6 @@ const err  = DEV ? (...a) => console.error(...a): () => {};
 
 export default function TryOnEarring({
   modelPath = '/models/arete.glb',
-  showCanvas = true,
   offsetX = 0,
   offsetY = 0,
   offsetZ = 0,
@@ -89,7 +100,6 @@ export default function TryOnEarring({
   rotationX = 0,
   rotationY = 0,
   rotationZ = 0,
-  opacity = 100,
 }) {
   // ---- Refs ----
   const videoRef = useRef(null);
@@ -112,8 +122,6 @@ export default function TryOnEarring({
   const isRunningRef = useRef(false);
   const modelPathRef = useRef(modelPath);
   const propsRef = useRef({ offsetX: 0, offsetY: 0, offsetZ: 0, sizeOffset: 0, rotationX: 0, rotationY: 0, rotationZ: 0 });
-  /** Almacena el último resultado de la IA para desacoplar tracking de renderizado */
-  const latestDetectionResultRef = useRef(null);
   /** Timestamp de la última llamada a detectForVideo */
   const lastDetectionTimeRef = useRef(0);
   /**
@@ -130,7 +138,7 @@ export default function TryOnEarring({
   const pageVisibleRef = useRef(true);
 
   // ---- Estado ----
-  const [cameraReady, setCameraReady] = useState(false);
+  const [, setCameraReady] = useState(false);
   const [cameraRequested, setCameraRequested] = useState(false);
   const [cameraStarted, setCameraStarted] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
@@ -149,6 +157,9 @@ export default function TryOnEarring({
       while (groupRef.children.length > 0) {
         groupRef.remove(groupRef.children[0]);
       }
+      groupRef.position.set(0, 0, 0);
+      groupRef.rotation.set(0, 0, 0);
+      groupRef.scale.set(1, 1, 1);
       if (modelRef.current) modelRef.current = null;
     };
     clearGroup(leftSubGroupRef.current, leftModelRef);
@@ -249,30 +260,12 @@ export default function TryOnEarring({
         applyModelToGroups(model, scaleFactor);
       },
       undefined, // sin callback de progreso en producción (evita logs innecesarios)
-      () => {
-        warn('⚠️ No se encontró modelo .glb (se usarán placeholders)');
+      (loadErr) => {
+        warn('⚠️ No se pudo cargar/decodificar el modelo .glb', loadErr);
         setModelLoading(false);
 
-        const createPlaceholderCube = (colorVal) => {
-          const geometry = new THREE.BoxGeometry(20, 20, 20);
-          const material = new THREE.MeshStandardMaterial({
-            color: colorVal,
-            metalness: 0.8,
-            roughness: 0.2,
-          });
-          return new THREE.Mesh(geometry, material);
-        };
-
-        const leftSubGroup = leftSubGroupRef.current;
-        const rightSubGroup = rightSubGroupRef.current;
-        if (leftSubGroup) {
-          leftSubGroup.add(createPlaceholderCube(0xc5a880));
-          leftEarringGroupRef.current.visible = true;
-        }
-        if (rightSubGroup) {
-          rightSubGroup.add(createPlaceholderCube(0xc5a880));
-          rightEarringGroupRef.current.visible = true;
-        }
+        if (leftEarringGroupRef.current) leftEarringGroupRef.current.visible = false;
+        if (rightEarringGroupRef.current) rightEarringGroupRef.current.visible = false;
       }
     );
   }, [clearModelGroups]);
