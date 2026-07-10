@@ -51,6 +51,34 @@ const MAX_ADAPTIVE_INTERVAL_MS = isMobile() ? 200 : 50;
 // Nota: Los desplazamientos de tracking y offsets locales de los aretes
 // se calculan dinámicamente en src/utils/faceTrackingUtils.js.
 
+// -----------------------------------------------------------------------
+// Caché de modelos GLB y singleton de GLTFLoader
+// -----------------------------------------------------------------------
+
+/**
+ * Caché global de modelos GLB ya procesados.
+ * Clave: ruta del modelo (string). Valor: THREE.Group (escena cloneable).
+ * Al ser module-level, persiste durante toda la sesión aunque el componente
+ * se desmonte y remonte, evitando re-descargas y re-procesamiento.
+ */
+const glbCache = new Map();
+
+/**
+ * Instancia única del GLTFLoader, compartida entre todas las cargas.
+ * Evita el overhead de instanciar el loader en cada cambio de modelo.
+ */
+let sharedLoader = null;
+const getLoader = () => {
+  if (!sharedLoader) sharedLoader = new GLTFLoader();
+  return sharedLoader;
+};
+
+/** Logger condicional: solo imprime en modo desarrollo */
+const DEV = import.meta.env.DEV;
+const log  = DEV ? (...a) => console.log(...a)  : () => {};
+const warn = DEV ? (...a) => console.warn(...a) : () => {};
+const err  = DEV ? (...a) => console.error(...a): () => {};
+
 export default function TryOnEarring({
   modelPath = '/models/arete.glb',
   showCanvas = true,
@@ -109,38 +137,33 @@ export default function TryOnEarring({
   const [error, setError] = useState(null);
   const [modelLoading, setModelLoading] = useState(true);
 
-  // ---- Inicializar escena Three.js ----  
+  // ---- Inicializar escena Three.js ----
+  /**
+   * Limpia los subgrupos de aretes sin disponer geometrías/materiales,
+   * ya que los recursos pueden estar referenciados en la caché de modelos.
+   * El dispose solo debe ocurrir cuando el componente se desmonta completamente.
+   */
   const clearModelGroups = useCallback(() => {
-    const leftSubGroup = leftSubGroupRef.current;
-    const rightSubGroup = rightSubGroupRef.current;
-
     const clearGroup = (groupRef, modelRef) => {
       if (!groupRef) return;
       while (groupRef.children.length > 0) {
-        const child = groupRef.children[0];
-        groupRef.remove(child);
-        if (child && child.traverse) {
-          child.traverse((nested) => {
-            if (nested.isMesh) {
-              nested.geometry?.dispose?.();
-              if (Array.isArray(nested.material)) {
-                nested.material.forEach((material) => material?.dispose?.());
-              } else {
-                nested.material?.dispose?.();
-              }
-            }
-          });
-        }
+        groupRef.remove(groupRef.children[0]);
       }
-      if (modelRef.current) {
-        modelRef.current = null;
-      }
+      if (modelRef.current) modelRef.current = null;
     };
-
-    clearGroup(leftSubGroup, leftModelRef);
-    clearGroup(rightSubGroup, rightModelRef);
+    clearGroup(leftSubGroupRef.current, leftModelRef);
+    clearGroup(rightSubGroupRef.current, rightModelRef);
   }, []);
 
+  /**
+   * Carga un modelo GLB en los grupos de aretes izquierdo y derecho.
+   *
+   * Optimizaciones implementadas:
+   * - Caché de modelos: si el path ya fue cargado, reutiliza el THREE.Group
+   *   cacheado sin volver a ejecutar GLTFLoader.load().
+   * - Singleton de loader: reutiliza una única instancia de GLTFLoader.
+   * - Eliminación de doble traverse y doble position/rotation duplicados.
+   */
   const loadModelIntoGroups = useCallback((path) => {
     const leftGroup = leftEarringGroupRef.current;
     const rightGroup = rightEarringGroupRef.current;
@@ -148,7 +171,46 @@ export default function TryOnEarring({
 
     clearModelGroups();
 
-    const loader = new GLTFLoader();
+    const applyModelToGroups = (cachedModel, scaleFactor) => {
+      const leftSubGroup = leftSubGroupRef.current;
+      const rightSubGroup = rightSubGroupRef.current;
+      if (!leftSubGroup || !rightSubGroup) {
+        warn('⚠️ No se encontraron los subgrupos de arete para añadir el modelo.');
+        return;
+      }
+
+      // Clonar desde el modelo cacheado (geometría y materiales se comparten)
+      const leftModel = cachedModel.clone(true);
+      leftSubGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+      leftSubGroup.rotation.set(0, Math.PI, 0);
+      leftSubGroup.position.set(0, 0, 0);
+      leftSubGroup.add(leftModel);
+      leftEarringGroupRef.current.visible = true;
+      leftModelRef.current = leftModel;
+
+      const rightModel = cachedModel.clone(true);
+      rightModel.scale.x *= -1;
+      rightSubGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
+      rightSubGroup.rotation.set(0, Math.PI, 0);
+      rightSubGroup.position.set(0, 0, 0);
+      rightSubGroup.add(rightModel);
+      rightEarringGroupRef.current.visible = true;
+      rightModelRef.current = rightModel;
+
+      setModelLoading(false);
+    };
+
+    // ── Cache hit: modelo ya procesado anteriormente ──────────────────────
+    if (glbCache.has(path)) {
+      log(`⚡ Cache hit: reutilizando modelo para ${path}`);
+      const { model, scaleFactor } = glbCache.get(path);
+      applyModelToGroups(model, scaleFactor);
+      return;
+    }
+
+    // ── Cache miss: cargar y procesar por primera vez ─────────────────────
+    log(`📦 Cargando modelo por primera vez: ${path}`);
+    const loader = getLoader();
     loader.load(
       path,
       (gltf) => {
@@ -160,14 +222,11 @@ export default function TryOnEarring({
         const size = new THREE.Vector3();
         box.getSize(size);
 
-        console.log('Bounding Box Original del Modelo:', {
-          center: { x: center.x, y: center.y, z: center.z },
-          size: { x: size.x, y: size.y, z: size.z }
-        });
-
+        // Posicionar y orientar el modelo canónico (se clonará después)
         model.position.set(-center.x, -box.max.y, -center.z);
         model.rotation.set(0, Math.PI, 0);
 
+        // Un único traverse para configurar todos los materiales
         model.traverse((child) => {
           if (child.isMesh) {
             child.castShadow = false;
@@ -183,56 +242,15 @@ export default function TryOnEarring({
         const heightVal = size.y > 0 ? size.y : (size.x > 0 ? size.x : 1);
         const scaleFactor = 40 / heightVal;
 
-        console.log(`📏 Factor de escala calculado: ${scaleFactor} (Tamaño original en Y: ${size.y})`);
+        // Guardar en caché antes de añadir a la escena
+        glbCache.set(path, { model, scaleFactor });
+        log(`✅ Modelo cargado y cacheado: ${path}`);
 
-        const leftSubGroup = leftSubGroupRef.current;
-        const rightSubGroup = rightSubGroupRef.current;
-        if (!leftSubGroup || !rightSubGroup) {
-          console.warn('⚠️ No se encontraron los subgrupos de arete para añadir el modelo.');
-          return;
-        }
-
-        model.position.set(-center.x, -box.max.y, -center.z);
-        model.rotation.set(0, Math.PI, 0);
-
-        model.traverse((child) => {
-          if (child.isMesh) {
-            child.castShadow = false;
-            child.receiveShadow = false;
-            if (child.material) {
-              child.material.depthWrite = true;
-              child.material.depthTest = true;
-              child.material.needsUpdate = true;
-            }
-          }
-        });
-
-        const leftModel = model;
-        leftSubGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-        leftSubGroup.rotation.set(0, Math.PI, 0);
-        leftSubGroup.position.set(0, 0, 0);
-        leftSubGroup.add(leftModel);
-        leftEarringGroupRef.current.visible = true;
-        leftModelRef.current = leftModel;
-
-        const rightModel = model.clone(true);
-        rightModel.scale.x *= -1;
-        rightSubGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-        rightSubGroup.rotation.set(0, Math.PI, 0);
-        rightSubGroup.position.set(0, 0, 0);
-        rightSubGroup.add(rightModel);
-        rightEarringGroupRef.current.visible = true;
-        rightModelRef.current = rightModel;
-
-        setModelLoading(false);
-        console.log('✅ Modelo .glb cargado, centrado y escalado correctamente.');
+        applyModelToGroups(model, scaleFactor);
       },
-      (xhr) => {
-        const pct = Math.round((xhr.loaded / xhr.total) * 100);
-        if (pct % 25 === 0) console.log(`📦 Modelo: ${pct}%`);
-      },
+      undefined, // sin callback de progreso en producción (evita logs innecesarios)
       () => {
-        console.warn('⚠️ No se encontró modelo .glb (se usarán placeholders)');
+        warn('⚠️ No se encontró modelo .glb (se usarán placeholders)');
         setModelLoading(false);
 
         const createPlaceholderCube = (colorVal) => {
@@ -264,7 +282,7 @@ export default function TryOnEarring({
 
     const canvas = canvasRef.current;
     if (!canvas) {
-      console.warn('⚠️ Canvas ref no disponible, se reintentará después');
+      warn('⚠️ Canvas ref no disponible, se reintentará después');
       return;
     }
 
@@ -278,7 +296,7 @@ export default function TryOnEarring({
       });
       renderer.setClearColor(0x000000, 0); // Fondo totalmente transparente
     } catch (webglErr) {
-      console.error('❌ Error creando WebGLRenderer:', webglErr);
+      err('❌ Error creando WebGLRenderer:', webglErr);
       setError('Tu navegador no soporta WebGL. Prueba con Chrome o Edge.');
       return;
     }
@@ -422,7 +440,7 @@ export default function TryOnEarring({
         idealHeight = isPortrait ? 1280 : 720;
       }
 
-      console.log(`📷 Resolución solicitada: ${idealWidth}×${idealHeight} (mobile: ${mobile}, portrait: ${isPortrait})`);
+      log(`📷 Resolución solicitada: ${idealWidth}×${idealHeight} (mobile: ${mobile}, portrait: ${isPortrait})`)
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -455,12 +473,9 @@ export default function TryOnEarring({
           videoNeedsRotationRef.current = needsRotation;
 
           if (needsRotation) {
-            console.log(`🔄 Stream landscape (${streamW}×${streamH}) en dispositivo portrait → aplicando rotate(-90deg)`);
-            // scaleX(-1) = espejo horizontal (efecto cámara frontal)
-            // rotate(-90deg) = corrige la orientación del stream
+            log(`🔄 Stream landscape (${streamW}×${streamH}) en dispositivo portrait → aplicando rotate(-90deg)`);
             setVideoTransform('scaleX(-1) rotate(-90deg)');
           } else {
-            console.log(`✅ Stream (${streamW}×${streamH}) orientación correcta, sin rotación CSS necesaria`);
             setVideoTransform('scaleX(-1)');
           }
 
@@ -468,13 +483,13 @@ export default function TryOnEarring({
         };
         try {
           await videoRef.current.play();
-          console.log('✅ Cámara iniciada correctamente');
+          log('✅ Cámara iniciada correctamente');
           syncSceneToVideo();
         } catch (playErr) {
-          console.warn('⚠️ play() interrumpido:', playErr);
+          warn('⚠️ play() interrumpido:', playErr);
         }
       } else {
-        console.warn('⚠️ videoRef no disponible, reintentando...');
+        warn('⚠️ videoRef no disponible, reintentando...');
         await new Promise((resolve) => setTimeout(resolve, 200));
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -483,17 +498,17 @@ export default function TryOnEarring({
       }
       setCameraReady(true);
       return true;
-    } catch (err) {
-      console.error('❌ Error cámara:', err);
+    } catch (cameraErr) {
+      err('❌ Error cámara:', cameraErr);
       let msg = 'No se pudo acceder a la cámara. ';
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      if (cameraErr.name === 'NotAllowedError' || cameraErr.name === 'PermissionDeniedError') {
         msg += 'Permiso denegado. Acepta los permisos de cámara en tu navegador.';
-      } else if (err.name === 'NotFoundError') {
+      } else if (cameraErr.name === 'NotFoundError') {
         msg += 'No se encontró una cámara en este dispositivo.';
-      } else if (err.name === 'NotReadableError') {
+      } else if (cameraErr.name === 'NotReadableError') {
         msg += 'La cámara está siendo usada por otra aplicación o pestaña.';
       } else {
-        msg += err.message || 'Error desconocido';
+        msg += cameraErr.message || 'Error desconocido';
       }
       setError(msg);
       return false;
@@ -503,7 +518,7 @@ export default function TryOnEarring({
   // ---- Inicializar MediaPipe FaceLandmarker ----
   const initFaceLandmarker = useCallback(async () => {
     const tryCreate = async (delegate) => {
-      console.log(`📦 Cargando MediaPipe FaceLandmarker (delegate: ${delegate})...`);
+      log(`📦 Cargando MediaPipe FaceLandmarker (delegate: ${delegate})...`);
       const vision = await FilesetResolver.forVisionTasks(
         'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
       );
@@ -520,22 +535,19 @@ export default function TryOnEarring({
     };
 
     try {
-      // Intentar con GPU primero (más rápido cuando está disponible)
       const faceLandmarker = await tryCreate('GPU');
       faceLandmarkerRef.current = faceLandmarker;
-      console.log('✅ FaceLandmarker iniciado con GPU delegate');
+      log('✅ FaceLandmarker iniciado con GPU delegate');
       return true;
     } catch (gpuErr) {
-      console.warn('⚠️ GPU delegate falló, intentando con CPU delegate...', gpuErr.message);
+      warn('⚠️ GPU delegate falló, intentando con CPU delegate...', gpuErr.message);
       try {
-        // Fallback a CPU — más lento pero más compatible en dispositivos de gama baja
-        // o navegadores sin soporte WebGPU/WebGL2 adecuado.
         const faceLandmarker = await tryCreate('CPU');
         faceLandmarkerRef.current = faceLandmarker;
-        console.log('✅ FaceLandmarker iniciado con CPU delegate (modo compatibilidad)');
+        log('✅ FaceLandmarker iniciado con CPU delegate (modo compatibilidad)');
         return true;
       } catch (cpuErr) {
-        console.error('❌ Error inicializando FaceLandmarker:', cpuErr);
+        err('❌ Error inicializando FaceLandmarker:', cpuErr);
         setError('Error al inicializar la detección facial. Verifica tu conexión a internet.');
         return false;
       }
@@ -552,7 +564,7 @@ export default function TryOnEarring({
     // cambia de pestaña o bloquea la pantalla.
     const handleVisibilityChange = () => {
       pageVisibleRef.current = document.visibilityState === 'visible';
-      console.log(`📱 Página ${pageVisibleRef.current ? 'visible' : 'oculta'} → detección ${pageVisibleRef.current ? 'reanudada' : 'pausada'}`);
+      log(`📱 Página ${pageVisibleRef.current ? 'visible' : 'oculta'} → detección ${pageVisibleRef.current ? 'reanudada' : 'pausada'}`);
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -617,8 +629,8 @@ export default function TryOnEarring({
               propsRef.current.sizeOffset
             );
           }
-        } catch (err) {
-          console.warn('⚠️ Error en detección facial:', err);
+        } catch (detectionErr) {
+          warn('⚠️ Error en detección facial:', detectionErr);
         }
 
         // Intervalo adaptativo: si la detección tardó más del intervalo base,
@@ -714,19 +726,9 @@ export default function TryOnEarring({
     propsRef.current = { offsetX, offsetY, offsetZ, sizeOffset, rotationX, rotationY, rotationZ };
   }, [offsetX, offsetY, offsetZ, sizeOffset, rotationX, rotationY, rotationZ]);
 
-  useEffect(() => {
-    const applyOpacity = (group, value) => {
-      if (!group) return;
-      group.traverse((child) => {
-        if (child.isMesh && child.material) {
-          child.material.transparent = value < 100;
-          child.material.opacity = value / 100;
-        }
-      });
-    };
-    applyOpacity(leftEarringGroupRef.current, opacity);
-    applyOpacity(rightEarringGroupRef.current, opacity);
-  }, [opacity, modelLoading]);
+  // Nota: el efecto de opacidad fue eliminado porque el prop `opacity`
+  // ya no se usa desde Simulator.jsx. Los modelos siempre se muestran
+  // a opacidad completa (valor por defecto: 100).
 
   // ---- Inicialización del componente ----
   useEffect(() => {
@@ -779,7 +781,7 @@ export default function TryOnEarring({
       }
       // Resetear estado de suavizado para evitar saltos al remontar
       resetSmoothing();
-      console.log('🧹 Recursos del probador AR liberados');
+      log('🧹 Recursos del probador AR liberados');
     };
   }, [initScene, loadModelIntoGroups]);
 
