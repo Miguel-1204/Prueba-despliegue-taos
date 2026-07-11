@@ -87,6 +87,7 @@ export default function TryOnEarring({
 
   const faceLandmarkerRef = useRef(null);
   const animationIdRef = useRef(null);
+  const detectionTimeoutRef = useRef(null);
   const isRunningRef = useRef(false);
   const modelPathRef = useRef(modelPath);
   const propsRef = useRef({ offsetX: 0, offsetY: 0, offsetZ: 0, sizeOffset: 0, rotationX: 0, rotationY: 0, rotationZ: 0 });
@@ -579,7 +580,7 @@ export default function TryOnEarring({
       }
 
       if (isRunningRef.current) {
-        setTimeout(runDetection, adaptiveIntervalRef.current);
+        detectionTimeoutRef.current = window.setTimeout(runDetection, adaptiveIntervalRef.current);
       } else {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }
@@ -753,6 +754,10 @@ export default function TryOnEarring({
       if (animationIdRef.current) {
         cancelAnimationFrame(animationIdRef.current);
         animationIdRef.current = null;
+      }
+      if (detectionTimeoutRef.current) {
+        clearTimeout(detectionTimeoutRef.current);
+        detectionTimeoutRef.current = null;
       }
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
