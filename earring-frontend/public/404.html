@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>TAOS | Joyería Artesanal Premium</title>
+    <script type="text/javascript">
+      // Single Page Apps for GitHub Pages
+      // MIT License
+      // https://github.com/rafgraph/spa-github-pages
+      // This script takes the current url and converts the path and query
+      // string into just a query string, and then redirects the browser
+      // to the new url with only a query string and hash, the selling point
+      // is that it maintains the path and query string across redirects.
+      // For example, if you go to https://www.example.com/one/two?a=b&c=d#qwe,
+      // it will redirect to https://www.example.com/?/one/two&a=b~and~c=d#qwe
+      // and then the index.html page will redirect back to the original url.
+      
+      // If you're deploying to a custom domain, set pathSegmentsToKeep to 0.
+      // If you're deploying to a project page, like https://<user>.github.io/<repo>/,
+      // set pathSegmentsToKeep to 1 (which keeps the <repo> part in the path).
+      var pathSegmentsToKeep = 1;
+
+      var l = window.location;
+      l.replace(
+        l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+        l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
+        l.pathname.slice(1).split('/').slice(pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+        (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+        l.hash
+      );
+    </script>
+  </head>
+  <body>
+    <div style="font-family: 'Montserrat', sans-serif; text-align: center; margin-top: 50px;">
+      <h2>Cargando...</h2>
+      <p>Redirigiendo a la sección seleccionada...</p>
+    </div>
+  </body>
+</html>

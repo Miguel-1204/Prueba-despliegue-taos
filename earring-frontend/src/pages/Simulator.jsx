@@ -18,10 +18,10 @@ export default function Simulator() {
   const [earringSizeOffset, setEarringSizeOffset] = useState(20);
   const earringOpacity = 100;
   const [earringOffsetX, setEarringOffsetX] = useState(0);
-  const [earringOffsetY, setEarringOffsetY] = useState(0);
+  const [earringOffsetY, setEarringOffsetY] = useState(10);
   const earringOffsetZ = 0;
   const earringRotationX = 0;
-  const [earringRotationY, setEarringRotationY] = useState(-30);
+  const [earringRotationY, setEarringRotationY] = useState(-40);
   const earringRotationZ = 0;
   const [showMobileSettings, setShowMobileSettings] = useState(false);
 
@@ -96,8 +96,8 @@ export default function Simulator() {
                 onClick={() => {
                   setEarringSizeOffset(20);
                   setEarringOffsetX(0);
-                  setEarringOffsetY(0);
-                  setEarringRotationY(-30);
+                  setEarringOffsetY(10);
+                  setEarringRotationY(-40);
                 }}
                 aria-label="Restablecer ajustes"
                 style={{
