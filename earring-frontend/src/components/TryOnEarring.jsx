@@ -14,9 +14,10 @@
 
 import { useRef, useEffect, useState, useCallback } from 'react';
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { onFaceLandmarkerResults, resetSmoothing } from '../utils/faceTrackingUtils';
 import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
+import { modelCache } from '../utils/modelCacheManager';
+import { prepareModelClones, createPlaceholderCube } from '../utils/modelConfigurator';
 
 // -----------------------------------------------------------------------
 // Constantes de configuración
@@ -24,6 +25,8 @@ import { FilesetResolver, FaceLandmarker } from '@mediapipe/tasks-vision';
 
 /** Distancia de la cámara ortográfica al plano Z = 0 */
 const CAMERA_DISTANCE = 900;
+const VIDEO_WIDTH = 640;
+const VIDEO_HEIGHT = 480;
 
 /**
  * Detecta si el usuario está en un dispositivo móvil.
@@ -53,7 +56,6 @@ const MAX_ADAPTIVE_INTERVAL_MS = isMobile() ? 200 : 50;
 
 export default function TryOnEarring({
   modelPath = '/models/arete.glb',
-  showCanvas = true,
   offsetX = 0,
   offsetY = 0,
   offsetZ = 0,
@@ -79,13 +81,15 @@ export default function TryOnEarring({
   const leftModelRef = useRef(null);
   const rightModelRef = useRef(null);
 
+  // Grupos objetivo invisibles para almacenar la posición y orientación obtenida por la IA (desacoplamiento de tracking)
+  const leftTargetGroupRef = useRef(new THREE.Group());
+  const rightTargetGroupRef = useRef(new THREE.Group());
+
   const faceLandmarkerRef = useRef(null);
   const animationIdRef = useRef(null);
   const isRunningRef = useRef(false);
   const modelPathRef = useRef(modelPath);
   const propsRef = useRef({ offsetX: 0, offsetY: 0, offsetZ: 0, sizeOffset: 0, rotationX: 0, rotationY: 0, rotationZ: 0 });
-  /** Almacena el último resultado de la IA para desacoplar tracking de renderizado */
-  const latestDetectionResultRef = useRef(null);
   /** Timestamp de la última llamada a detectForVideo */
   const lastDetectionTimeRef = useRef(0);
   /**
@@ -102,7 +106,6 @@ export default function TryOnEarring({
   const pageVisibleRef = useRef(true);
 
   // ---- Estado ----
-  const [cameraReady, setCameraReady] = useState(false);
   const [cameraRequested, setCameraRequested] = useState(false);
   const [cameraStarted, setCameraStarted] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
@@ -119,12 +122,13 @@ export default function TryOnEarring({
       while (groupRef.children.length > 0) {
         const child = groupRef.children[0];
         groupRef.remove(child);
-        if (child && child.traverse) {
+        // Si es un placeholder dinámico, liberamos sus recursos WebGL individuales
+        if (child.isPlaceholder) {
           child.traverse((nested) => {
             if (nested.isMesh) {
               nested.geometry?.dispose?.();
               if (Array.isArray(nested.material)) {
-                nested.material.forEach((material) => material?.dispose?.());
+                nested.material.forEach((m) => m?.dispose?.());
               } else {
                 nested.material?.dispose?.();
               }
@@ -141,122 +145,60 @@ export default function TryOnEarring({
     clearGroup(rightSubGroup, rightModelRef);
   }, []);
 
-  const loadModelIntoGroups = useCallback((path) => {
+  const loadModelIntoGroups = useCallback(async (path) => {
     const leftGroup = leftEarringGroupRef.current;
     const rightGroup = rightEarringGroupRef.current;
     if (!leftGroup || !rightGroup) return;
 
     clearModelGroups();
 
-    const loader = new GLTFLoader();
-    loader.load(
-      path,
-      (gltf) => {
-        const model = gltf.scene;
+    try {
+      // Cargar clon limpio del modelo desde el Administrador de Caché
+      const modelClone = await modelCache.loadModel(path);
 
-        const box = new THREE.Box3().setFromObject(model);
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        const size = new THREE.Vector3();
-        box.getSize(size);
+      // Centrar, escalar y configurar los aretes para ambas orejas
+      const { leftModel, rightModel, scaleFactor } = prepareModelClones(modelClone);
 
-        console.log('Bounding Box Original del Modelo:', {
-          center: { x: center.x, y: center.y, z: center.z },
-          size: { x: size.x, y: size.y, z: size.z }
-        });
+      const leftSubGroup = leftSubGroupRef.current;
+      const rightSubGroup = rightSubGroupRef.current;
+      if (!leftSubGroup || !rightSubGroup) return;
 
-        model.position.set(-center.x, -box.max.y, -center.z);
-        model.rotation.set(0, Math.PI, 0);
+      leftSubGroup.scale.setScalar(scaleFactor);
+      leftSubGroup.rotation.set(0, Math.PI, 0);
+      leftSubGroup.position.set(0, 0, 0);
+      leftSubGroup.add(leftModel);
+      leftModelRef.current = leftModel;
 
-        model.traverse((child) => {
-          if (child.isMesh) {
-            child.castShadow = false;
-            child.receiveShadow = false;
-            if (child.material) {
-              child.material.depthWrite = true;
-              child.material.depthTest = true;
-              child.material.needsUpdate = true;
-            }
-          }
-        });
+      rightSubGroup.scale.setScalar(scaleFactor);
+      rightSubGroup.rotation.set(0, Math.PI, 0);
+      rightSubGroup.position.set(0, 0, 0);
+      rightSubGroup.add(rightModel);
+      rightModelRef.current = rightModel;
 
-        const heightVal = size.y > 0 ? size.y : (size.x > 0 ? size.x : 1);
-        const scaleFactor = 40 / heightVal;
+      leftGroup.visible = true;
+      rightGroup.visible = true;
+      setModelLoading(false);
+    } catch (err) {
+      console.warn('⚠️ No se pudo cargar el modelo 3D (usando placeholder):', err);
 
-        console.log(`📏 Factor de escala calculado: ${scaleFactor} (Tamaño original en Y: ${size.y})`);
+      const leftSubGroup = leftSubGroupRef.current;
+      const rightSubGroup = rightSubGroupRef.current;
 
-        const leftSubGroup = leftSubGroupRef.current;
-        const rightSubGroup = rightSubGroupRef.current;
-        if (!leftSubGroup || !rightSubGroup) {
-          console.warn('⚠️ No se encontraron los subgrupos de arete para añadir el modelo.');
-          return;
-        }
-
-        model.position.set(-center.x, -box.max.y, -center.z);
-        model.rotation.set(0, Math.PI, 0);
-
-        model.traverse((child) => {
-          if (child.isMesh) {
-            child.castShadow = false;
-            child.receiveShadow = false;
-            if (child.material) {
-              child.material.depthWrite = true;
-              child.material.depthTest = true;
-              child.material.needsUpdate = true;
-            }
-          }
-        });
-
-        const leftModel = model;
-        leftSubGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-        leftSubGroup.rotation.set(0, Math.PI, 0);
-        leftSubGroup.position.set(0, 0, 0);
-        leftSubGroup.add(leftModel);
-        leftEarringGroupRef.current.visible = true;
-        leftModelRef.current = leftModel;
-
-        const rightModel = model.clone(true);
-        rightModel.scale.x *= -1;
-        rightSubGroup.scale.set(scaleFactor, scaleFactor, scaleFactor);
-        rightSubGroup.rotation.set(0, Math.PI, 0);
-        rightSubGroup.position.set(0, 0, 0);
-        rightSubGroup.add(rightModel);
-        rightEarringGroupRef.current.visible = true;
-        rightModelRef.current = rightModel;
-
-        setModelLoading(false);
-        console.log('✅ Modelo .glb cargado, centrado y escalado correctamente.');
-      },
-      (xhr) => {
-        const pct = Math.round((xhr.loaded / xhr.total) * 100);
-        if (pct % 25 === 0) console.log(`📦 Modelo: ${pct}%`);
-      },
-      () => {
-        console.warn('⚠️ No se encontró modelo .glb (se usarán placeholders)');
-        setModelLoading(false);
-
-        const createPlaceholderCube = (colorVal) => {
-          const geometry = new THREE.BoxGeometry(20, 20, 20);
-          const material = new THREE.MeshStandardMaterial({
-            color: colorVal,
-            metalness: 0.8,
-            roughness: 0.2,
-          });
-          return new THREE.Mesh(geometry, material);
-        };
-
-        const leftSubGroup = leftSubGroupRef.current;
-        const rightSubGroup = rightSubGroupRef.current;
-        if (leftSubGroup) {
-          leftSubGroup.add(createPlaceholderCube(0xc5a880));
-          leftEarringGroupRef.current.visible = true;
-        }
-        if (rightSubGroup) {
-          rightSubGroup.add(createPlaceholderCube(0xc5a880));
-          rightEarringGroupRef.current.visible = true;
-        }
+      if (leftSubGroup) {
+        const leftPlaceholder = createPlaceholderCube(0xc5a880);
+        leftSubGroup.add(leftPlaceholder);
+        leftModelRef.current = leftPlaceholder;
       }
-    );
+      if (rightSubGroup) {
+        const rightPlaceholder = createPlaceholderCube(0xc5a880);
+        rightSubGroup.add(rightPlaceholder);
+        rightModelRef.current = rightPlaceholder;
+      }
+
+      if (leftGroup) leftGroup.visible = true;
+      if (rightGroup) rightGroup.visible = true;
+      setModelLoading(false);
+    }
   }, [clearModelGroups]);
 
   const initScene = useCallback(() => {
@@ -394,7 +336,7 @@ export default function TryOnEarring({
     renderer.setSize(cW, cH, false);
     const maxPixelRatio = isMobile() ? 1.5 : 2;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
-  }, [getEffectiveSize]);
+  }, []);
 
   // ---- Inicializar cámara ----
   const startCamera = useCallback(async () => {
@@ -481,7 +423,6 @@ export default function TryOnEarring({
           try { await videoRef.current.play(); } catch { /* ignore */ }
         }
       }
-      setCameraReady(true);
       return true;
     } catch (err) {
       console.error('❌ Error cámara:', err);
@@ -544,28 +485,23 @@ export default function TryOnEarring({
 
   // ---- Bucle de animación ----
   const startLoop = useCallback(() => {
-    if (animationIdRef.current) return;
+    // Si ya está corriendo algún bucle principal, no iniciar otro
+    if (isRunningRef.current) return;
     isRunningRef.current = true;
 
     // ── Page Visibility API: pausar detección IA cuando la pestaña está oculta ────
-    // Esto ahorra CPU/GPU significativamente en dispositivos móviles cuando el usuario
-    // cambia de pestaña o bloquea la pantalla.
     const handleVisibilityChange = () => {
       pageVisibleRef.current = document.visibilityState === 'visible';
-      console.log(`📱 Página ${pageVisibleRef.current ? 'visible' : 'oculta'} → detección ${pageVisibleRef.current ? 'reanudada' : 'pausada'}`);
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
     // ── Bucle de detección IA (throttled + adaptativo) ──────────────────────────
-    // Intervalo adaptativo: mide el tiempo real de cada llamada y ajusta el siguiente
-    // intervalo para evitar bloquear el hilo principal en dispositivos lentos.
     const runDetection = async () => {
       if (!isRunningRef.current) {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
         return;
       }
 
-      // Saltear detección si la pestaña está oculta (ahorra batería y CPU)
       if (!pageVisibleRef.current) {
         setTimeout(runDetection, 250);
         return;
@@ -594,7 +530,6 @@ export default function TryOnEarring({
             const cH = canvas ? canvas.clientHeight : 480;
             const { w: effectiveW, h: effectiveH } = getEffectiveSize(canvas, video);
 
-            // Sincronizar frustum si el contenedor cambió de tamaño
             if (cameraRef.current) {
               const cam = cameraRef.current;
               const frustumW = cam.right - cam.left;
@@ -604,10 +539,11 @@ export default function TryOnEarring({
               }
             }
 
+            // Pasamos los grupos objetivo invisibles al tracking de la IA
             onFaceLandmarkerResults(
               result,
-              leftEarringGroupRef.current,
-              rightEarringGroupRef.current,
+              leftTargetGroupRef.current,
+              rightTargetGroupRef.current,
               effectiveW,
               effectiveH,
               setFaceDetected,
@@ -621,19 +557,16 @@ export default function TryOnEarring({
           console.warn('⚠️ Error en detección facial:', err);
         }
 
-        // Intervalo adaptativo: si la detección tardó más del intervalo base,
-        // ampliar el próximo intervalo para dejar respirar al hilo principal.
         const detectionMs = performance.now() - detectionStart;
         if (detectionMs > DETECTION_INTERVAL_MS) {
           adaptiveIntervalRef.current = Math.min(
-            detectionMs * 1.2,  // añadir 20% de margen
+            detectionMs * 1.2,
             MAX_ADAPTIVE_INTERVAL_MS
           );
         } else {
-          // Recuperar intervalo base si el rendimiento mejora
           adaptiveIntervalRef.current = Math.max(
             DETECTION_INTERVAL_MS,
-            adaptiveIntervalRef.current * 0.95  // reducir gradualmente
+            adaptiveIntervalRef.current * 0.95
           );
         }
       }
@@ -647,9 +580,15 @@ export default function TryOnEarring({
 
     runDetection();
 
-    // ── Bucle de renderizado (60fps) ──────────────────────────────────────────
+    // ── Bucle de renderizado (60fps con interpolación delta-time) ──────────────
+    let lastFrameTime = performance.now();
+
     const animate = () => {
       if (!isRunningRef.current) return;
+
+      const now = performance.now();
+      const deltaTime = Math.min((now - lastFrameTime) / 1000, 0.1);
+      lastFrameTime = now;
 
       const currentProps = propsRef.current;
       const leftSubGroup = leftSubGroupRef.current;
@@ -657,6 +596,7 @@ export default function TryOnEarring({
       const rotationXRad = THREE.MathUtils.degToRad(currentProps.rotationX || 0);
       const rotationYRad = THREE.MathUtils.degToRad(currentProps.rotationY || 0);
       const rotationZRad = THREE.MathUtils.degToRad(currentProps.rotationZ || 0);
+
       if (leftSubGroup) {
         leftSubGroup.rotation.x = rotationXRad;
         leftSubGroup.rotation.y = rotationYRad;
@@ -666,6 +606,51 @@ export default function TryOnEarring({
         rightSubGroup.rotation.x = rotationXRad;
         rightSubGroup.rotation.y = -rotationYRad;
         rightSubGroup.rotation.z = rotationZRad;
+      }
+
+      // Lógica de interpolación y suavizado de los aretes respecto al rostro en 60fps
+      const leftGroup = leftEarringGroupRef.current;
+      const rightGroup = rightEarringGroupRef.current;
+      const leftTarget = leftTargetGroupRef.current;
+      const rightTarget = rightTargetGroupRef.current;
+
+      // Factor de interpolación dependiente de deltaTime para framerate independiente (~22Hz de atenuación)
+      const lerpFactor = 1.0 - Math.exp(-22 * deltaTime);
+
+      if (leftGroup && leftTarget) {
+        if (leftTarget.visible) {
+          if (!leftGroup.visible) {
+            // Copiar instantáneamente en el primer frame detectado para evitar retrasos
+            leftGroup.position.copy(leftTarget.position);
+            leftGroup.quaternion.copy(leftTarget.quaternion);
+            leftGroup.scale.copy(leftTarget.scale);
+            leftGroup.visible = true;
+          } else {
+            // Interpolar a 60fps
+            leftGroup.position.lerp(leftTarget.position, lerpFactor);
+            leftGroup.quaternion.slerp(leftTarget.quaternion, lerpFactor);
+            leftGroup.scale.lerp(leftTarget.scale, lerpFactor);
+          }
+        } else {
+          leftGroup.visible = false;
+        }
+      }
+
+      if (rightGroup && rightTarget) {
+        if (rightTarget.visible) {
+          if (!rightGroup.visible) {
+            rightGroup.position.copy(rightTarget.position);
+            rightGroup.quaternion.copy(rightTarget.quaternion);
+            rightGroup.scale.copy(rightTarget.scale);
+            rightGroup.visible = true;
+          } else {
+            rightGroup.position.lerp(rightTarget.position, lerpFactor);
+            rightGroup.quaternion.slerp(rightTarget.quaternion, lerpFactor);
+            rightGroup.scale.lerp(rightTarget.scale, lerpFactor);
+          }
+        } else {
+          rightGroup.visible = false;
+        }
       }
 
       if (rendererRef.current && sceneRef.current && cameraRef.current) {
@@ -779,8 +764,11 @@ export default function TryOnEarring({
       }
       // Resetear estado de suavizado para evitar saltos al remontar
       resetSmoothing();
+      // Limpiar y liberar la caché de modelos al desmontar el simulador
+      modelCache.clear();
       console.log('🧹 Recursos del probador AR liberados');
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initScene, loadModelIntoGroups]);
 
   // ---- Renderizado ----
