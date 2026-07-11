@@ -67,6 +67,14 @@ const MAX_ADAPTIVE_INTERVAL_MS = isMobile() ? 200 : 50;
 const glbCache = new Map();
 
 /**
+ * Map para promesas de carga en curso.
+ * Evita descargas/construcciones duplicadas cuando varias solicitudes
+ * piden el mismo modelo antes de que la primera haya concluido.
+ * Clave: ruta del modelo. Valor: Promise<{ model, scaleFactor }>
+ */
+const glbLoadingPromises = new Map();
+
+/**
  * Instancia única del GLTFLoader, compartida entre todas las cargas.
  * Evita el overhead de instanciar el loader en cada cambio de modelo.
  */
@@ -174,7 +182,7 @@ export default function TryOnEarring({
    * - Singleton de loader: reutiliza una única instancia de GLTFLoader.
    * - Eliminación de doble traverse y doble position/rotation duplicados.
    */
-  const loadModelIntoGroups = useCallback((path) => {
+  const loadModelIntoGroups = useCallback(async (path) => {
     const leftGroup = leftEarringGroupRef.current;
     const rightGroup = rightEarringGroupRef.current;
     if (!leftGroup || !rightGroup) return;
@@ -218,55 +226,82 @@ export default function TryOnEarring({
       return;
     }
 
-    // ── Cache miss: cargar y procesar por primera vez ─────────────────────
-    log(`📦 Cargando modelo por primera vez: ${path}`);
-    const loader = getLoader();
-    loader.load(
-      path,
-      (gltf) => {
-        const model = gltf.scene;
-
-        const box = new THREE.Box3().setFromObject(model);
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        const size = new THREE.Vector3();
-        box.getSize(size);
-
-        // Posicionar y orientar el modelo canónico (se clonará después)
-        model.position.set(-center.x, -box.max.y, -center.z);
-        model.rotation.set(0, Math.PI, 0);
-
-        // Un único traverse para configurar todos los materiales
-        model.traverse((child) => {
-          if (child.isMesh) {
-            child.castShadow = false;
-            child.receiveShadow = false;
-            if (child.material) {
-              child.material.depthWrite = true;
-              child.material.depthTest = true;
-              child.material.needsUpdate = true;
-            }
-          }
-        });
-
-        const heightVal = size.y > 0 ? size.y : (size.x > 0 ? size.x : 1);
-        const scaleFactor = 40 / heightVal;
-
-        // Guardar en caché antes de añadir a la escena
-        glbCache.set(path, { model, scaleFactor });
-        log(`✅ Modelo cargado y cacheado: ${path}`);
-
+    // ── Si hay una carga en curso para este path, esperarla y reutilizar resultado ──
+    if (glbLoadingPromises.has(path)) {
+      log(`⌛ Esperando carga en curso para ${path}`);
+      try {
+        const { model, scaleFactor } = await glbLoadingPromises.get(path);
         applyModelToGroups(model, scaleFactor);
-      },
-      undefined, // sin callback de progreso en producción (evita logs innecesarios)
-      (loadErr) => {
-        warn('⚠️ No se pudo cargar/decodificar el modelo .glb', loadErr);
+      } catch (e) {
+        warn('⚠️ Error en carga concurrente:', e);
         setModelLoading(false);
-
         if (leftEarringGroupRef.current) leftEarringGroupRef.current.visible = false;
         if (rightEarringGroupRef.current) rightEarringGroupRef.current.visible = false;
       }
-    );
+      return;
+    }
+
+    // ── Cache miss: iniciar carga y almacenar promesa para deduplicar ────────
+    log(`📦 Cargando modelo por primera vez: ${path}`);
+    const loader = getLoader();
+
+    const loadPromise = new Promise((resolve, reject) => {
+      loader.load(
+        path,
+        (gltf) => resolve(gltf),
+        undefined,
+        (loadErr) => reject(loadErr)
+      );
+    }).then((gltf) => {
+      const model = gltf.scene;
+
+      const box = new THREE.Box3().setFromObject(model);
+      const center = new THREE.Vector3();
+      box.getCenter(center);
+      const size = new THREE.Vector3();
+      box.getSize(size);
+
+      // Posicionar y orientar el modelo canónico (se clonará después)
+      model.position.set(-center.x, -box.max.y, -center.z);
+      model.rotation.set(0, Math.PI, 0);
+
+      // Un único traverse para configurar todos los materiales
+      model.traverse((child) => {
+        if (child.isMesh) {
+          child.castShadow = false;
+          child.receiveShadow = false;
+          if (child.material) {
+            child.material.depthWrite = true;
+            child.material.depthTest = true;
+            child.material.needsUpdate = true;
+          }
+        }
+      });
+
+      const heightVal = size.y > 0 ? size.y : (size.x > 0 ? size.x : 1);
+      const scaleFactor = 40 / heightVal;
+
+      // Guardar en caché antes de añadir a la escena
+      glbCache.set(path, { model, scaleFactor });
+      log(`✅ Modelo cargado y cacheado: ${path}`);
+
+      return { model, scaleFactor };
+    });
+
+    glbLoadingPromises.set(path, loadPromise);
+
+    try {
+      const { model, scaleFactor } = await loadPromise;
+      applyModelToGroups(model, scaleFactor);
+    } catch (loadErr) {
+      warn('⚠️ No se pudo cargar/decodificar el modelo .glb', loadErr);
+      setModelLoading(false);
+
+      if (leftEarringGroupRef.current) leftEarringGroupRef.current.visible = false;
+      if (rightEarringGroupRef.current) rightEarringGroupRef.current.visible = false;
+    } finally {
+      glbLoadingPromises.delete(path);
+    }
   }, [clearModelGroups]);
 
   const initScene = useCallback(() => {
@@ -724,7 +759,6 @@ export default function TryOnEarring({
       await new Promise((r) => requestAnimationFrame(r));
 
       initScene();
-      loadModelIntoGroups(modelPathRef.current);
 
       if (cameraRequested) {
         const camOk = await startCamera();
