@@ -15,14 +15,14 @@ export default function Simulator() {
       : productsWith3D[0];
   }, [productParam, productsWith3D]);
 
-  const [earringSizeOffset, setEarringSizeOffset] = useState(0);
-  const [earringOpacity, setEarringOpacity] = useState(100);
+  const [earringSizeOffset, setEarringSizeOffset] = useState(20);
+  const earringOpacity = 100;
   const [earringOffsetX, setEarringOffsetX] = useState(0);
   const [earringOffsetY, setEarringOffsetY] = useState(0);
-  const [earringOffsetZ, setEarringOffsetZ] = useState(0);
-  const [earringRotationX, setEarringRotationX] = useState(0);
-  const [earringRotationY, setEarringRotationY] = useState(0);
-  const [earringRotationZ, setEarringRotationZ] = useState(0);
+  const earringOffsetZ = 0;
+  const earringRotationX = 0;
+  const [earringRotationY, setEarringRotationY] = useState(-30);
+  const earringRotationZ = 0;
   const [showMobileSettings, setShowMobileSettings] = useState(false);
 
   const handleProductChange = useCallback((prod) => {
@@ -87,103 +87,79 @@ export default function Simulator() {
               </button>
             </div>
 
-            <div className={`adjustment-sliders ${showMobileSettings ? 'visible' : 'collapsed'}`}>
-              <h4 className="control-section-heading">Ajustar Filtro</h4>
-              
-              <div className="slider-group">
-                <label>Tamaño: <span>{earringSizeOffset > 0 ? '+' : ''}{earringSizeOffset}%</span></label>
-                <input 
-                  type="range" 
-                  min="-50" 
-                  max="100" 
-                  value={earringSizeOffset} 
-                  onChange={(e) => setEarringSizeOffset(Number(e.target.value))}
-                  className="simulator-slider"
-                />
-              </div>
+          <div className={`adjustment-sliders ${showMobileSettings ? 'visible' : 'collapsed'}`}>
+            <h4 className="control-section-heading">Ajustar Filtro</h4>
 
-              <div className="slider-group">
-                <label>Opacidad: <span>{earringOpacity}%</span></label>
-                <input 
-                  type="range" 
-                  min="30" 
-                  max="100" 
-                  value={earringOpacity} 
-                  onChange={(e) => setEarringOpacity(Number(e.target.value))}
-                  className="simulator-slider"
-                />
-              </div>
-
-              <div className="slider-group">
-                <label>Desplazamiento X: <span>{earringOffsetX}px</span></label>
-                <input
-                  type="range"
-                  min="-150"
-                  max="150"
-                  value={earringOffsetX}
-                  onChange={(e) => setEarringOffsetX(Number(e.target.value))}
-                  className="simulator-slider"
-                />
-              </div>
-
-              <div className="slider-group">
-                <label>Desplazamiento Y: <span>{earringOffsetY}px</span></label>
-                <input
-                  type="range"
-                  min="-150"
-                  max="150"
-                  value={earringOffsetY}
-                  onChange={(e) => setEarringOffsetY(Number(e.target.value))}
-                  className="simulator-slider"
-                />
-              </div>
-
-              <div className="slider-group">
-                <label>Profundidad Z: <span>{earringOffsetZ}px</span></label>
-                <input
-                  type="range"
-                  min="-100"
-                  max="100"
-                  value={earringOffsetZ}
-                  onChange={(e) => setEarringOffsetZ(Number(e.target.value))}
-                  className="simulator-slider"
-                />
-              </div>
-
-              <div className="slider-group">
-                <label>Rotación X: <span>{earringRotationX > 0 ? '+' : ''}{earringRotationX}°</span></label>
-                <input
-                  type="range"
-                  min="-45"
-                  max="45"
-                  value={earringRotationX}
-                  onChange={(e) => setEarringRotationX(Number(e.target.value))}
-                  className="simulator-slider"
-                />
-              </div>
-              <div className="slider-group">
-                <label>Rotación Y: <span>{earringRotationY > 0 ? '+' : ''}{earringRotationY}°</span></label>
-                <input
-                  type="range"
-                  min="-180"
-                  max="180"
-                  value={earringRotationY}
-                  onChange={(e) => setEarringRotationY(Number(e.target.value))}
-                  className="simulator-slider"
-                />
-              </div>
-              <div className="slider-group">
-                <label>Rotación Z: <span>{earringRotationZ > 0 ? '+' : ''}{earringRotationZ}°</span></label>
-                <input
-                  type="range"
-                  min="-180"
-                  max="180"
-                  value={earringRotationZ}
-                  onChange={(e) => setEarringRotationZ(Number(e.target.value))}
-                  className="simulator-slider"
-                />
-              </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setEarringSizeOffset(20);
+                  setEarringOffsetX(0);
+                  setEarringOffsetY(0);
+                  setEarringRotationY(-30);
+                }}
+                aria-label="Restablecer ajustes"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: 18,
+                  color: 'var(--logo-purple)',
+                }}
+              >
+                ↺
+              </button>
             </div>
+
+            <div className="slider-group">
+              <label>Tamaño: <span>{earringSizeOffset > 0 ? '+' : ''}{earringSizeOffset}%</span></label>
+              <input
+                type="range"
+                min="-50"
+                max="100"
+                value={earringSizeOffset}
+                onChange={(e) => setEarringSizeOffset(Number(e.target.value))}
+                className="simulator-slider"
+              />
+            </div>
+
+            <div className="slider-group">
+              <label>Desplazamiento horizontal: <span>{earringOffsetX}px</span></label>
+              <input
+                type="range"
+                min="-150"
+                max="150"
+                value={earringOffsetX}
+                onChange={(e) => setEarringOffsetX(Number(e.target.value))}
+                className="simulator-slider"
+              />
+            </div>
+
+            <div className="slider-group">
+              <label>Desplazamiento vertical: <span>{earringOffsetY}px</span></label>
+              <input
+                type="range"
+                min="-150"
+                max="150"
+                value={earringOffsetY}
+                onChange={(e) => setEarringOffsetY(Number(e.target.value))}
+                className="simulator-slider"
+              />
+            </div>
+
+            <div className="slider-group">
+              <label>Rotación: <span>{earringRotationY > 0 ? '+' : ''}{earringRotationY}°</span></label>
+              <input
+                type="range"
+                min="-180"
+                max="180"
+                value={earringRotationY}
+                onChange={(e) => setEarringRotationY(Number(e.target.value))}
+                className="simulator-slider"
+              />
+            </div>
+          </div>
           </div>
 
           <QuickCatalog

@@ -1,9 +1,21 @@
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 
 class ModelCacheManager {
   constructor() {
     this.cache = new Map(); // path -> Promise<gltf>
     this.loader = new GLTFLoader();
+    try {
+      // Configurar DRACOLoader para soportar glTFs con mallas Draco comprimidas.
+      // Usamos el CDN oficial de decoders; si prefieres servir localmente coloca
+      // los archivos decoder en /public/draco/ y ajusta setDecoderPath('/draco/').
+      const dracoLoader = new DRACOLoader();
+      dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
+      this.loader.setDRACOLoader(dracoLoader);
+    } catch (e) {
+      // No crítico: continuar sin soporte DRACO si falla la inicialización
+      console.warn('No se pudo inicializar DRACOLoader:', e);
+    }
   }
 
   /**
