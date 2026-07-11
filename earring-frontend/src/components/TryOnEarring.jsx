@@ -153,8 +153,11 @@ export default function TryOnEarring({
     clearModelGroups();
 
     try {
-      // Cargar clon limpio del modelo desde el Administrador de Caché
-      const modelClone = await modelCache.loadModel(path);
+      // Cargar el objeto GLTF desde la caché
+      const gltf = await modelCache.loadModel(path);
+
+      // Extraer y clonar la escena 3D para evitar mutaciones en la plantilla guardada en caché
+      const modelClone = gltf.scene.clone(true);
 
       // Centrar, escalar y configurar los aretes para ambas orejas
       const { leftModel, rightModel, scaleFactor } = prepareModelClones(modelClone);
@@ -279,6 +282,10 @@ export default function TryOnEarring({
     const rightSubGroup = new THREE.Group();
     rightEarringGroup.add(rightSubGroup);
     rightSubGroupRef.current = rightSubGroup;
+
+    // Inicializar visibilidad en false para evitar el destello en (0,0,0) al arrancar
+    if (leftTargetGroupRef.current) leftTargetGroupRef.current.visible = false;
+    if (rightTargetGroupRef.current) rightTargetGroupRef.current.visible = false;
 
     sceneRef.current = scene;
   }, []);
@@ -614,8 +621,8 @@ export default function TryOnEarring({
       const leftTarget = leftTargetGroupRef.current;
       const rightTarget = rightTargetGroupRef.current;
 
-      // Factor de interpolación dependiente de deltaTime para framerate independiente (~22Hz de atenuación)
-      const lerpFactor = 1.0 - Math.exp(-22 * deltaTime);
+      // Factor de interpolación dependiente de deltaTime para framerate independiente (~45Hz de atenuación para eliminar retraso)
+      const lerpFactor = 1.0 - Math.exp(-45 * deltaTime);
 
       if (leftGroup && leftTarget) {
         if (leftTarget.visible) {
