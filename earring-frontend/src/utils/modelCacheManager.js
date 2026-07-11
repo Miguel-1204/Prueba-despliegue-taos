@@ -1,6 +1,9 @@
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 
+const MAX_CACHE_SIZE = 3;
+const isDev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
+
 class ModelCacheManager {
   constructor() {
     this.cache = new Map(); // path -> Promise<gltf>
@@ -27,23 +30,78 @@ class ModelCacheManager {
   loadModel(path) {
     if (!path) return Promise.reject(new Error('Path is required'));
 
-    let promise = this.cache.get(path);
-    if (!promise) {
-      promise = new Promise((resolve, reject) => {
-        this.loader.load(
-          path,
-          (gltf) => {
-            resolve(gltf);
-          },
-          undefined,
-          (error) => {
-            reject(error);
-          }
-        );
-      });
-      this.cache.set(path, promise);
+    const existing = this.cache.get(path);
+    if (existing) {
+      // Mover a final para marcar como recientemente usado
+      this.cache.delete(path);
+      this.cache.set(path, existing);
+      if (isDev) {
+        console.log(`Cache Size: ${this.cache.size} / ${MAX_CACHE_SIZE}`);
+        console.log(`Modelo recuperado: ${path}`);
+      }
+      return existing;
     }
+
+    const promise = new Promise((resolve, reject) => {
+      this.loader.load(
+        path,
+        (gltf) => {
+          resolve(gltf);
+        },
+        undefined,
+        (error) => {
+          reject(error);
+        }
+      );
+    });
+
+    this.cache.set(path, promise);
+    this.evictIfNeeded();
+
+    if (isDev) {
+      console.log(`Cache Size: ${this.cache.size} / ${MAX_CACHE_SIZE}`);
+      console.log(`Modelo agregado: ${path}`);
+    }
+
     return promise;
+  }
+
+  evictIfNeeded() {
+    while (this.cache.size > MAX_CACHE_SIZE) {
+      const lruKey = this.cache.keys().next().value;
+      const lruValue = this.cache.get(lruKey);
+      if (lruKey && lruValue) {
+        this.disposeCacheEntry(lruKey, lruValue);
+        if (isDev) {
+          console.log(`Modelo eliminado (LRU): ${lruKey}`);
+          console.log(`Cache Size: ${this.cache.size} / ${MAX_CACHE_SIZE}`);
+        }
+      } else {
+        this.cache.delete(lruKey);
+      }
+    }
+  }
+
+  disposeCacheEntry(path, promise) {
+    this.cache.delete(path);
+    promise
+      .then((gltf) => {
+        if (gltf && gltf.scene) {
+          gltf.scene.traverse((child) => {
+            if (child.isMesh) {
+              child.geometry?.dispose();
+              if (Array.isArray(child.material)) {
+                child.material.forEach((mat) => this.disposeMaterial(mat));
+              } else if (child.material) {
+                this.disposeMaterial(child.material);
+              }
+            }
+          });
+        }
+      })
+      .catch(() => {
+        // Ignorar errores al liberar modelos no cargados correctamente.
+      });
   }
 
   /**
@@ -74,14 +132,37 @@ class ModelCacheManager {
   }
 
   disposeMaterial(material) {
-    // Liberar texturas asociadas al material
+    if (!material) return;
+
+    const textureKeys = [
+      'map',
+      'normalMap',
+      'roughnessMap',
+      'metalnessMap',
+      'emissiveMap',
+      'alphaMap',
+      'aoMap',
+      'displacementMap',
+      'lightMap',
+      'specularMap',
+      'envMap'
+    ];
+
+    textureKeys.forEach((key) => {
+      const texture = material[key];
+      if (texture && typeof texture.dispose === 'function') {
+        texture.dispose();
+      }
+    });
+
     for (const key of Object.keys(material)) {
       const value = material[key];
       if (value && typeof value.dispose === 'function' && value.isTexture) {
         value.dispose();
       }
     }
-    material.dispose();
+
+    material.dispose?.();
   }
 }
 
