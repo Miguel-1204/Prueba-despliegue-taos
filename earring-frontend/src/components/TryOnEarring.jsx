@@ -253,23 +253,15 @@ export default function TryOnEarring({
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
-    // Iluminación mejorada para resaltar el brillo metálico (sin sombras para rendimiento)
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5)); // Bajamos la ambiental para ganar contraste y brillo
-
-    // Luz principal (Key Light) - frontal superior derecha
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    keyLight.position.set(300, 400, CAMERA_DISTANCE);
-    scene.add(keyLight);
-
-    // Luz de relleno (Fill Light) - frontal superior izquierda
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    fillLight.position.set(-300, 400, CAMERA_DISTANCE);
+  // Iluminación simple (sin sombras)
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(0, 0, CAMERA_DISTANCE);
+    scene.add(dirLight);
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
+    fillLight.position.set(0, -200, CAMERA_DISTANCE);
     scene.add(fillLight);
 
-    // Luz inferior (Bounce Light) - simula reflejo del suelo/cuerpo
-    const bounceLight = new THREE.DirectionalLight(0xffffff, 0.35);
-    bounceLight.position.set(0, -300, CAMERA_DISTANCE);
-    scene.add(bounceLight);
 
     // Grupo para el arete izquierdo
     const leftEarringGroup = new THREE.Group();
