@@ -45,6 +45,17 @@ export function configureMeshProperties(model) {
       if (child.material) {
         child.material.depthWrite = true;
         child.material.depthTest = true;
+
+        // Ajustamos las propiedades físicas del material para darles más brillo y realismo metálico
+        if (child.material.roughness !== undefined) {
+          // Un valor menor de roughness hace que los reflejos sean más pulidos y brillantes
+          child.material.roughness = 0.15;
+        }
+        if (child.material.metalness !== undefined) {
+          // Aumentamos el metalness para resaltar el aspecto de oro/plata/bronce
+          child.material.metalness = 0.9;
+        }
+
         child.material.needsUpdate = true;
       }
     }

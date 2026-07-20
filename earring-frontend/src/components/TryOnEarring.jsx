@@ -253,14 +253,23 @@ export default function TryOnEarring({
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
-    // Iluminación simple (sin sombras)
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    dirLight.position.set(0, 0, CAMERA_DISTANCE);
-    scene.add(dirLight);
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
-    fillLight.position.set(0, -200, CAMERA_DISTANCE);
+    // Iluminación mejorada para resaltar el brillo metálico (sin sombras para rendimiento)
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5)); // Bajamos la ambiental para ganar contraste y brillo
+
+    // Luz principal (Key Light) - frontal superior derecha
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    keyLight.position.set(300, 400, CAMERA_DISTANCE);
+    scene.add(keyLight);
+
+    // Luz de relleno (Fill Light) - frontal superior izquierda
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    fillLight.position.set(-300, 400, CAMERA_DISTANCE);
     scene.add(fillLight);
+
+    // Luz inferior (Bounce Light) - simula reflejo del suelo/cuerpo
+    const bounceLight = new THREE.DirectionalLight(0xffffff, 0.35);
+    bounceLight.position.set(0, -300, CAMERA_DISTANCE);
+    scene.add(bounceLight);
 
     // Grupo para el arete izquierdo
     const leftEarringGroup = new THREE.Group();
@@ -598,24 +607,6 @@ export default function TryOnEarring({
       const deltaTime = Math.min((now - lastFrameTime) / 1000, 0.1);
       lastFrameTime = now;
 
-      const currentProps = propsRef.current;
-      const leftSubGroup = leftSubGroupRef.current;
-      const rightSubGroup = rightSubGroupRef.current;
-      const rotationXRad = THREE.MathUtils.degToRad(currentProps.rotationX || 0);
-      const rotationYRad = THREE.MathUtils.degToRad(currentProps.rotationY || 0);
-      const rotationZRad = THREE.MathUtils.degToRad(currentProps.rotationZ || 0);
-
-      if (leftSubGroup) {
-        leftSubGroup.rotation.x = rotationXRad;
-        leftSubGroup.rotation.y = rotationYRad;
-        leftSubGroup.rotation.z = rotationZRad;
-      }
-      if (rightSubGroup) {
-        rightSubGroup.rotation.x = rotationXRad;
-        rightSubGroup.rotation.y = -rotationYRad;
-        rightSubGroup.rotation.z = rotationZRad;
-      }
-
       // Lógica de interpolación y suavizado de los aretes respecto al rostro en 60fps
       const leftGroup = leftEarringGroupRef.current;
       const rightGroup = rightEarringGroupRef.current;
@@ -705,7 +696,20 @@ export default function TryOnEarring({
 
   useEffect(() => {
     propsRef.current = { offsetX, offsetY, offsetZ, sizeOffset, rotationX, rotationY, rotationZ };
-  }, [offsetX, offsetY, offsetZ, sizeOffset, rotationX, rotationY, rotationZ]);
+
+    const leftSubGroup = leftSubGroupRef.current;
+    const rightSubGroup = rightSubGroupRef.current;
+    const rotationXRad = THREE.MathUtils.degToRad(rotationX || 0);
+    const rotationYRad = THREE.MathUtils.degToRad(rotationY || 0);
+    const rotationZRad = THREE.MathUtils.degToRad(rotationZ || 0);
+
+    if (leftSubGroup) {
+      leftSubGroup.rotation.set(rotationXRad, rotationYRad, rotationZRad);
+    }
+    if (rightSubGroup) {
+      rightSubGroup.rotation.set(rotationXRad, -rotationYRad, rotationZRad);
+    }
+  }, [offsetX, offsetY, offsetZ, sizeOffset, rotationX, rotationY, rotationZ, modelLoading]);
 
   useEffect(() => {
     const applyOpacity = (group, value) => {

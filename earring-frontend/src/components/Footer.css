@@ -134,6 +134,16 @@
   color: #A09E97;
 }
 
+.contact-val a {
+  color: inherit;
+  text-decoration: none;
+  transition: var(--transition-quick);
+}
+
+.contact-val a:hover {
+  color: var(--logo-purple);
+}
+
 .footer-bottom {
   border-top: 1px solid rgba(226, 224, 217, 0.08);
   padding: 2rem 0;

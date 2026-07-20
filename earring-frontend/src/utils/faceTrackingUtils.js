@@ -58,6 +58,45 @@ export const FACIAL_LANDMARKS = {
 };
 
 // ---------------------------------------------------------------------------
+// Pool de Objetos Pre-asignados para Evitar Garbage Collection en tiempo real
+// ---------------------------------------------------------------------------
+const _vNose = new THREE.Vector3();
+const _vChin = new THREE.Vector3();
+const _vForehead = new THREE.Vector3();
+const _vLeftT = new THREE.Vector3();
+const _vRightT = new THREE.Vector3();
+const _vCenter = new THREE.Vector3();
+const _vUp = new THREE.Vector3();
+const _vForward = new THREE.Vector3();
+const _vRight = new THREE.Vector3();
+const _vMatrix = new THREE.Matrix4();
+
+const _vHeadPosition = new THREE.Vector3();
+const _qHeadQuaternion = new THREE.Quaternion();
+const _vHeadScale = new THREE.Vector3();
+
+const _vForeheadPos = new THREE.Vector3();
+const _vChinPos = new THREE.Vector3();
+
+const _vLeftLobeEstimate = new THREE.Vector3();
+const _vRightLobeEstimate = new THREE.Vector3();
+const _vTmp = new THREE.Vector3();
+
+const _vLeftTargetPos = new THREE.Vector3();
+const _vRightTargetPos = new THREE.Vector3();
+
+const _qSmoothQ = new THREE.Quaternion();
+const _vSmoothLeft = new THREE.Vector3();
+const _vSmoothRight = new THREE.Vector3();
+
+// Estado del suavizado
+const _prevLeftPos = new THREE.Vector3();
+const _prevRightPos = new THREE.Vector3();
+const _prevQuaternion = new THREE.Quaternion();
+let _hasPrev = false;
+let _lastDetectionTime = 0;
+
+// ---------------------------------------------------------------------------
 // Conversión de coordenadas MediaPipe → Three.js
 // ---------------------------------------------------------------------------
 
@@ -70,8 +109,8 @@ export const FACIAL_LANDMARKS = {
  *   Y: -(landmark.y - 0.5) * videoHeight  → Invierte Y (MediaPipe Y-abajo → Three.js Y-arriba)
  *   Z: -landmark.z * videoWidth           → Niega Z (MediaPipe Z-negativo-hacia-cámara → Three.js Z-positivo-hacia-cámara)
  */
-export function getLandmark3D(landmark, videoWidth, videoHeight) {
-  return new THREE.Vector3(
+export function getLandmark3D(landmark, videoWidth, videoHeight, target = new THREE.Vector3()) {
+  return target.set(
     (landmark.x - 0.5) * videoWidth,
     -(landmark.y - 0.5) * videoHeight,
     -landmark.z * videoWidth
@@ -93,59 +132,52 @@ export function getLandmark3D(landmark, videoWidth, videoHeight) {
  *
  * Luego se re-ortogonaliza UP = FORWARD × RIGHT para garantizar perpendicularidad.
  */
-export function computeHeadPoseMatrix(landmarks, videoWidth, videoHeight) {
-  const nose     = getLandmark3D(landmarks[FACIAL_LANDMARKS.NOSE_TIP],      videoWidth, videoHeight);
-  const chin     = getLandmark3D(landmarks[FACIAL_LANDMARKS.CHIN],          videoWidth, videoHeight);
-  const forehead = getLandmark3D(landmarks[FACIAL_LANDMARKS.FOREHEAD],      videoWidth, videoHeight);
-  const leftT    = getLandmark3D(landmarks[FACIAL_LANDMARKS.LEFT_EAR_PTS[0]],  videoWidth, videoHeight);
-  const rightT   = getLandmark3D(landmarks[FACIAL_LANDMARKS.RIGHT_EAR_PTS[0]], videoWidth, videoHeight);
+export function computeHeadPoseMatrix(landmarks, videoWidth, videoHeight, targetMatrix = _vMatrix) {
+  const nose     = getLandmark3D(landmarks[FACIAL_LANDMARKS.NOSE_TIP],      videoWidth, videoHeight, _vNose);
+  const chin     = getLandmark3D(landmarks[FACIAL_LANDMARKS.CHIN],          videoWidth, videoHeight, _vChin);
+  const forehead = getLandmark3D(landmarks[FACIAL_LANDMARKS.FOREHEAD],      videoWidth, videoHeight, _vForehead);
+  const leftT    = getLandmark3D(landmarks[FACIAL_LANDMARKS.LEFT_EAR_PTS[0]],  videoWidth, videoHeight, _vLeftT);
+  const rightT   = getLandmark3D(landmarks[FACIAL_LANDMARKS.RIGHT_EAR_PTS[0]], videoWidth, videoHeight, _vRightT);
 
   // Centro geométrico de la cabeza (promedio de 5 puntos clave)
-  const center = new THREE.Vector3()
+  _vCenter.set(0, 0, 0)
     .add(nose).add(chin).add(forehead).add(leftT).add(rightT)
-    .multiplyScalar(1 / 5);
+    .multiplyScalar(0.2); // 1/5
 
   // Construir base ortonormal (sistema mano derecha)
-  const up      = new THREE.Vector3().subVectors(forehead, chin).normalize();
-  const forward = new THREE.Vector3().subVectors(nose, center).normalize();
-  const right   = new THREE.Vector3().crossVectors(up, forward).normalize();
+  _vUp.subVectors(forehead, chin).normalize();
+  _vForward.subVectors(nose, _vCenter).normalize();
+  _vRight.crossVectors(_vUp, _vForward).normalize();
 
   // Re-ortogonalizar UP para eliminar errores numéricos
-  // forward × right = up (en sistema mano derecha: Z × X = Y)
-  up.crossVectors(forward, right).normalize();
+  _vUp.crossVectors(_vForward, _vRight).normalize();
 
-  const matrix = new THREE.Matrix4();
-  matrix.makeBasis(right, up, forward);
-  matrix.setPosition(center);
+  targetMatrix.makeBasis(_vRight, _vUp, _vForward);
+  targetMatrix.setPosition(_vCenter);
 
-  return matrix;
+  return targetMatrix;
 }
 
 // ---------------------------------------------------------------------------
 // Suavizado temporal (Smoothing) para movimiento natural
 // ---------------------------------------------------------------------------
 
-// Estado de suavizado (a nivel de módulo, seguro para el loop de animación)
-let _prevLeftPos = null;
-let _prevRightPos = null;
-let _prevQuaternion = null;
-
-/**
- * Factor de suavizado: 0.0 = sin suavizado (instantáneo), 1.0 = máximo suavizado (mucho lag).
- * Un valor de 0.35 da un movimiento fluido sin lag perceptible.
- */
-const SMOOTH_FACTOR = 0.35;
-
-function smoothVec3(prev, target) {
-  if (!prev) return target.clone();
-  return new THREE.Vector3().lerpVectors(prev, target, 1.0 - SMOOTH_FACTOR);
+function smoothVec3(prev, target, smoothFactor, out) {
+  if (!_hasPrev) {
+    out.copy(target);
+    return out;
+  }
+  out.lerpVectors(prev, target, smoothFactor);
+  return out;
 }
 
-function smoothQuat(prev, target) {
-  if (!prev) return target.clone();
-  const result = prev.clone();
-  result.slerp(target, 1.0 - SMOOTH_FACTOR);
-  return result;
+function smoothQuat(prev, target, smoothFactor, out) {
+  if (!_hasPrev) {
+    out.copy(target);
+    return out;
+  }
+  out.copy(prev).slerp(target, smoothFactor);
+  return out;
 }
 
 /**
@@ -153,9 +185,8 @@ function smoothQuat(prev, target) {
  * para que al volver a montar no haya "saltos" desde la posición anterior.
  */
 export function resetSmoothing() {
-  _prevLeftPos = null;
-  _prevRightPos = null;
-  _prevQuaternion = null;
+  _hasPrev = false;
+  _lastDetectionTime = 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -165,14 +196,6 @@ export function resetSmoothing() {
 /**
  * Procesa los resultados de MediaPipe FaceLandmarker para actualizar los grupos
  * de Three.js de los aretes izquierdo y derecho.
- *
- * Flujo (Cálculo robusto basado en landmarks anatómicos):
- *   1. Calcular pose exacta de la cabeza usando puntos clave.
- *   2. Calcular escala adaptativa basada en la altura del rostro.
- *   3. Estimar posición del lóbulo con el promedio de puntos clave.
- *   4. Aplicar offsets locales precisos.
- *   5. Suavizar posiciones y rotación.
- *   6. Aplicar transformaciones a los grupos de Three.js.
  */
 export function onFaceLandmarkerResults(
   result,
@@ -200,101 +223,88 @@ export function onFaceLandmarkerResults(
 
   try {
     // ── 1. Pose de la cabeza ──────────────────────────────────────────
-    // Utilizamos computeHeadPoseMatrix que garantiza la alineación perfecta
-    // con la cámara de Three.js, evitando las desalineaciones (quirks) 
-    // del sistema de coordenadas de la matriz canónica de MediaPipe.
-    const poseMatrix = computeHeadPoseMatrix(landmarks, videoWidth, videoHeight);
-
-    const headQuaternion = new THREE.Quaternion();
-    const headPosition   = new THREE.Vector3();
-    const headScale      = new THREE.Vector3();
-    poseMatrix.decompose(headPosition, headQuaternion, headScale);
+    const poseMatrix = computeHeadPoseMatrix(landmarks, videoWidth, videoHeight, _vMatrix);
+    poseMatrix.decompose(_vHeadPosition, _qHeadQuaternion, _vHeadScale);
 
     // Extraer ejes locales reales del rostro
-    const right   = new THREE.Vector3();
-    const up      = new THREE.Vector3();
-    const forward = new THREE.Vector3();
-    poseMatrix.extractBasis(right, up, forward);
-    right.normalize();
-    up.normalize();
-    forward.normalize();
+    poseMatrix.extractBasis(_vRight, _vUp, _vForward);
+    _vRight.normalize();
+    _vUp.normalize();
+    _vForward.normalize();
 
     // ── 2. Escala adaptativa del rostro ────────────────────────────────
-    const foreheadPos = getLandmark3D(landmarks[FACIAL_LANDMARKS.FOREHEAD], videoWidth, videoHeight);
-    const chinPos     = getLandmark3D(landmarks[FACIAL_LANDMARKS.CHIN],     videoWidth, videoHeight);
+    const foreheadPos = getLandmark3D(landmarks[FACIAL_LANDMARKS.FOREHEAD], videoWidth, videoHeight, _vForeheadPos);
+    const chinPos     = getLandmark3D(landmarks[FACIAL_LANDMARKS.CHIN],     videoWidth, videoHeight, _vChinPos);
     const faceHeight  = foreheadPos.distanceTo(chinPos);
 
     const baseFaceHeight = 150; // Altura de referencia en píxeles de la escena
     const scaleMultiplier = Math.max(0.4, Math.min(6.0, faceHeight / baseFaceHeight));
 
     // ── 3. Estimación de la posición del lóbulo (Método A y B) ────────
-    // Método A: Promedio ponderado de landmarks cercanos de la mandíbula
-    const leftLobeEstimate = new THREE.Vector3(0, 0, 0);
+    _vLeftLobeEstimate.set(0, 0, 0);
     FACIAL_LANDMARKS.LEFT_EAR_PTS.forEach(id => {
-      leftLobeEstimate.add(getLandmark3D(landmarks[id], videoWidth, videoHeight));
+      getLandmark3D(landmarks[id], videoWidth, videoHeight, _vTmp);
+      _vLeftLobeEstimate.add(_vTmp);
     });
-    leftLobeEstimate.divideScalar(FACIAL_LANDMARKS.LEFT_EAR_PTS.length);
+    _vLeftLobeEstimate.multiplyScalar(1 / FACIAL_LANDMARKS.LEFT_EAR_PTS.length);
 
-    const rightLobeEstimate = new THREE.Vector3(0, 0, 0);
+    _vRightLobeEstimate.set(0, 0, 0);
     FACIAL_LANDMARKS.RIGHT_EAR_PTS.forEach(id => {
-      rightLobeEstimate.add(getLandmark3D(landmarks[id], videoWidth, videoHeight));
+      getLandmark3D(landmarks[id], videoWidth, videoHeight, _vTmp);
+      _vRightLobeEstimate.add(_vTmp);
     });
-    rightLobeEstimate.divideScalar(FACIAL_LANDMARKS.RIGHT_EAR_PTS.length);
+    _vRightLobeEstimate.multiplyScalar(1 / FACIAL_LANDMARKS.RIGHT_EAR_PTS.length);
 
     // ── 4. Offsets finos en coordenadas locales de la cabeza ──────────
-    // Se ha reducido 'outwardPx' significativamente para evitar que queden alejados de la oreja.
-    // Usamos el vector 'right' anatómico derivado de la pose calculada.
     const outwardPx = 3 * scaleMultiplier; 
-    const downPx    = 10 * scaleMultiplier; // Bajamos un poco más para llegar al lóbulo
+    const downPx    = 10 * scaleMultiplier; 
 
-    // Arete izquierdo (persona's left): está en X positivo en Three.js
-    // → "outward" = dirección +right (más positivo en X)
-    const leftTargetPos = leftLobeEstimate.clone()
-      .addScaledVector(right, outwardPx)
-      .addScaledVector(up, -downPx);
+    // Arete izquierdo
+    _vLeftTargetPos.copy(_vLeftLobeEstimate)
+      .addScaledVector(_vRight, outwardPx)
+      .addScaledVector(_vUp, -downPx);
 
-    // Arete derecho (persona's right): está en X negativo en Three.js
-    // → "outward" = dirección -right (más negativo en X)
-    const rightTargetPos = rightLobeEstimate.clone()
-      .addScaledVector(right, -outwardPx)
-      .addScaledVector(up, -downPx);
+    // Arete derecho
+    _vRightTargetPos.copy(_vRightLobeEstimate)
+      .addScaledVector(_vRight, -outwardPx)
+      .addScaledVector(_vUp, -downPx);
 
-    // ── 5. Suavizado temporal ─────────────────────────────────────────
-    const smoothedLeft  = smoothVec3(_prevLeftPos, leftTargetPos);
-    const smoothedRight = smoothVec3(_prevRightPos, rightTargetPos);
-    const smoothedQ     = smoothQuat(_prevQuaternion, headQuaternion);
+    // ── 5. Suavizado temporal adaptativo ──────────────────────────────
+    const now = performance.now();
+    let dt = 0.016;
+    if (_lastDetectionTime > 0) {
+      dt = (now - _lastDetectionTime) / 1000;
+    }
+    _lastDetectionTime = now;
+    dt = Math.min(dt, 0.1);
 
-    _prevLeftPos    = smoothedLeft;
-    _prevRightPos   = smoothedRight;
-    _prevQuaternion = smoothedQ;
+    const tau = 0.06; // Constante de tiempo para la respuesta de suavizado
+    const smoothFactor = 1.0 - Math.exp(-dt / tau);
 
-    // ── 6. Oclusión lateral (qué oreja está oculta al girar la cabeza) ─
-    //
-    // El vector `forward` apunta del centro de la cabeza hacia la nariz.
-    // En el espacio de Three.js (ANTES del espejo CSS):
-    //
-    //   forward.x > 0  →  Nariz apunta a la DERECHA en la imagen original (no espejada)
-    //                  →  Esto significa que el usuario está mirando a su IZQUIERDA anatómica
-    //                  →  Su oreja IZQUIERDA queda detrás de la cabeza → OCULTA
-    //
-    //   forward.x < 0  →  Nariz apunta a la IZQUIERDA en la imagen original
-    //                  →  Esto significa que el usuario está mirando a su DERECHA anatómica
-    //                  →  Su oreja DERECHA queda detrás de la cabeza → OCULTA
-    //
+    smoothVec3(_prevLeftPos, _vLeftTargetPos, smoothFactor, _vSmoothLeft);
+    smoothVec3(_prevRightPos, _vRightTargetPos, smoothFactor, _vSmoothRight);
+    smoothQuat(_prevQuaternion, _qHeadQuaternion, smoothFactor, _qSmoothQ);
+
+    _prevLeftPos.copy(_vSmoothLeft);
+    _prevRightPos.copy(_vSmoothRight);
+    _prevQuaternion.copy(_qSmoothQ);
+    _hasPrev = true;
+
+    // ── 6. Oclusión lateral ───────────────────────────────────────────
     const OCCLUSION_THRESHOLD = 0.25;
-    const isLeftOccluded  = forward.x > OCCLUSION_THRESHOLD;
-    const isRightOccluded = forward.x < -OCCLUSION_THRESHOLD;
+    const isLeftOccluded  = _vForward.x > OCCLUSION_THRESHOLD;
+    const isRightOccluded = _vForward.x < -OCCLUSION_THRESHOLD;
 
     // ── 7. Aplicar transformaciones a los grupos ──────────────────────
     if (leftEarringGroup) {
       if (isLeftOccluded) {
         leftEarringGroup.visible = false;
       } else {
-        leftEarringGroup.position.copy(smoothedLeft);
+        leftEarringGroup.position.copy(_vSmoothLeft);
         leftEarringGroup.position.x += offsetX;
         leftEarringGroup.position.y += offsetY;
         leftEarringGroup.position.z += offsetZ;
-        leftEarringGroup.quaternion.copy(smoothedQ);
+        leftEarringGroup.quaternion.copy(_qSmoothQ);
         leftEarringGroup.scale.setScalar(scaleMultiplier * (1 + sizeOffset / 100));
         leftEarringGroup.visible = true;
       }
@@ -304,11 +314,11 @@ export function onFaceLandmarkerResults(
       if (isRightOccluded) {
         rightEarringGroup.visible = false;
       } else {
-        rightEarringGroup.position.copy(smoothedRight);
+        rightEarringGroup.position.copy(_vSmoothRight);
         rightEarringGroup.position.x += offsetX;
         rightEarringGroup.position.y += offsetY;
         rightEarringGroup.position.z += offsetZ;
-        rightEarringGroup.quaternion.copy(smoothedQ);
+        rightEarringGroup.quaternion.copy(_qSmoothQ);
         rightEarringGroup.scale.setScalar(scaleMultiplier * (1 + sizeOffset / 100));
         rightEarringGroup.visible = true;
       }
@@ -382,3 +392,4 @@ export function hideGroup(group) {
 export function showGroup(group) {
   if (group) group.visible = true;
 }
+

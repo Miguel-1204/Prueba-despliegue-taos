@@ -34,7 +34,7 @@ export default function Home() {
               <span>a mano</span>
             </h1>
             <p className="hero-description">
-              Descubre aretes exclusivos inspirados en la naturaleza. Piezas únicas que fusionan el brillo del baño de oro de 24k con el arte del tejido y las resinas orgánicas.
+              Descubre aretes exclusivos inspirados en la naturaleza. hechos a mano, combinando tradición y diseño contemporáneo para crear piezas únicas que realzan tu estilo.
             </p>
             <div className="hero-actions">
               <Link to="/catalog" className="gold-btn hero-btn">
