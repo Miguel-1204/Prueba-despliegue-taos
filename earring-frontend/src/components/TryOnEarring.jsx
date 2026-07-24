@@ -605,8 +605,8 @@ export default function TryOnEarring({
       const leftTarget = leftTargetGroupRef.current;
       const rightTarget = rightTargetGroupRef.current;
 
-      // Factor de interpolación dependiente de deltaTime para framerate independiente (~45Hz de atenuación para eliminar retraso)
-      const lerpFactor = 1.0 - Math.exp(-45 * deltaTime);
+      // Factor de interpolación dependiente de deltaTime para framerate independiente (~80Hz de atenuación para eliminar retraso visual)
+      const lerpFactor = 1.0 - Math.exp(-80 * deltaTime);
 
       if (leftGroup && leftTarget) {
         if (leftTarget.visible) {

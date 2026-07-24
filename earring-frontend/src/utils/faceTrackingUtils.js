@@ -278,7 +278,7 @@ export function onFaceLandmarkerResults(
     _lastDetectionTime = now;
     dt = Math.min(dt, 0.1);
 
-    const tau = 0.06; // Constante de tiempo para la respuesta de suavizado
+    const tau = 0.02; // Constante de tiempo para la respuesta de suavizado (20ms para reducir latencia)
     const smoothFactor = 1.0 - Math.exp(-dt / tau);
 
     smoothVec3(_prevLeftPos, _vLeftTargetPos, smoothFactor, _vSmoothLeft);

@@ -1,7 +1,7 @@
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 
-const MAX_CACHE_SIZE = 3;
+const MAX_CACHE_SIZE = 1;
 const isDev = typeof import.meta !== 'undefined' && import.meta.env?.DEV;
 
 class ModelCacheManager {
